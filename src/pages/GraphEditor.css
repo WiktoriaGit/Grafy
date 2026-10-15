@@ -1,0 +1,26 @@
+.graph-editor-tools .ge-action { width:100%; display:flex; align-items:center; justify-content:center; gap:9px; background:#1b2a42; border:1px solid #35445f; color:#dbe5f5; border-radius:9px; padding:11px 10px; margin:8px 0; font-size:12px; font-weight:600; transition:background .15s; }
+.graph-editor-tools .ge-action:hover:not(:disabled) { background:#283957; }
+.graph-editor-tools .ge-action:disabled { opacity:.4; cursor:not-allowed; }
+.graph-editor-tools .ge-primary { background:#4f46e5; border-color:#6366f1; color:white; }
+.graph-editor-tools .ge-primary:hover { background:#6366f1 !important; }
+.graph-editor-tools .ge-hint { display:flex; gap:8px; align-items:flex-start; color:#96a8c2; font-size:11px; line-height:1.6; padding:10px 0; }
+.graph-editor-tools .ge-hint svg { flex-shrink:0; margin-top:2px; }
+.graph-editor-tools .ge-field { display:flex; flex-direction:column; gap:7px; color:#9eafc6; font-size:11px; margin:12px 0; }
+.graph-editor-tools .ge-field select,.ge-weight input { width:100%; background:#0d1728; color:#e2e8f0; border:1px solid #34445d; border-radius:8px; padding:10px; outline:none; }
+.graph-editor-tools .ge-field select:focus,.ge-weight input:focus { border-color:#818cf8; }
+.graph-editor-tools .ge-actions-two { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.graph-editor-tools .ge-actions-two .ge-action { margin:4px 0; }
+.ge-weight { margin:14px 0; color:#9eafc6; font-size:11px; }
+.ge-weight > div { display:flex; gap:7px; margin-top:7px; }
+.ge-weight button { padding:0 10px; background:#4f46e5; border:0; color:#fff; border-radius:7px; }
+.ge-flow { width:100%; height:660px; background:#101a2b; }
+.ge-flow .react-flow__node-default { padding:0; }
+.ge-flow .react-flow__handle { width:9px; height:9px; background:#a5b4fc; border:1px solid #0e1627; }
+.ge-flow .react-flow__node.selected { box-shadow:0 0 0 4px #6366f155; }
+.ge-flow .react-flow__controls { border:1px solid #334155; border-radius:9px; overflow:hidden; box-shadow:none; }
+.ge-flow .react-flow__controls-button { background:#1e293b; color:#cbd5e1; border-bottom:1px solid #334155; }
+.ge-flow .react-flow__controls-button svg { fill:currentColor; }
+.ge-flow .react-flow__controls-button:hover { background:#334155; }
+.ge-status { display:flex; justify-content:space-between; gap:12px; padding:15px 20px; border-top:1px solid #28364c; color:#91a4bf; font-size:11px; }
+.ge-status strong { color:#c7d2fe; }
+@media(max-width:600px) { .ge-flow { height:500px; } .ge-status { flex-direction:column; } }
