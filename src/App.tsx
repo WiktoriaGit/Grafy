@@ -7,6 +7,7 @@ import Algorithms from './pages/Algorithms'
 import Experiments from './pages/Experiments'
 import Results from './pages/Results'
 import MST from './pages/MST'
+import Comparison from './pages/Comparison'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/editor" element={<GraphEditor />} />
           <Route path="/algorithms" element={<Algorithms />} />
+          <Route path="/comparison" element={<Comparison />} />
           <Route path="/experiments" element={<Experiments />} />
           <Route path="/results" element={<Results />} />
           <Route path="/mst" element={<MST />} />

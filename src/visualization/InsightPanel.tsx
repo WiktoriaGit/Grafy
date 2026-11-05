@@ -25,14 +25,14 @@ function structureTitle(kind: StructureKind) {
   if (kind === 'queue') return 'Kolejka (FIFO)'
   if (kind === 'stack') return 'Stos (LIFO)'
   if (kind === 'priority') return 'Kandydaci według odległości'
-  return 'Brak kolejki / stosu'
+  return 'Wierzchołki o skończonej odległości'
 }
 
 function structureHint(kind: StructureKind) {
   if (kind === 'queue') return 'Lewa strona = początek kolejki (kolejny element do pobrania).'
   if (kind === 'stack') return 'Prawa strona = szczyt stosu (kolejny element do pobrania).'
   if (kind === 'priority') return 'Posortowane rosnąco po bieżącej odległości d(·).'
-  return 'Bellman–Ford nie utrzymuje kolejki ani stosu w tej wizualizacji.'
+  return 'Bellman–Ford nie używa kolejki priorytetowej — poniżej widać wierzchołki ze skończonym d(·). Kluczowa jest tablica odległości i poprzedników oraz historia relaksacji.'
 }
 
 const TABS: Array<{ id: TabId; label: string }> = [

@@ -9,6 +9,7 @@ import {
   ChevronRight,
   FlaskConical,
   GitBranch,
+  GitCompare,
   LayoutDashboard,
   Menu,
   Network,
@@ -20,6 +21,7 @@ const navigation = [
   { to: '/', label: 'Panel główny', icon: LayoutDashboard, end: true },
   { to: '/editor', label: 'Edytor grafów', icon: Network },
   { to: '/algorithms', label: 'Algorytmy', icon: GitBranch },
+  { to: '/comparison', label: 'Porównanie algorytmów', icon: GitCompare },
   { to: '/experiments', label: 'Eksperymenty', icon: FlaskConical },
   { to: '/results', label: 'Wyniki i analiza', icon: BarChart3 },
   { to: '/mst', label: 'Prim i Kruskal', icon: GitBranch },
@@ -29,8 +31,10 @@ const titles: Record<string, string> = {
   '/': 'Panel główny',
   '/editor': 'Edytor grafów',
   '/algorithms': 'Algorytmy grafowe',
+  '/comparison': 'Porównanie algorytmów',
   '/experiments': 'Eksperymenty',
   '/results': 'Wyniki i analiza',
+  '/mst': 'Prim i Kruskal',
 }
 
 export default function Layout() {

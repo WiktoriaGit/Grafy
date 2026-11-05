@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { Background, BackgroundVariant, Controls, MarkerType, ReactFlow, type Edge, type Node } from '@xyflow/react'
-import { ArrowRight, GitBranch, Play, Upload } from 'lucide-react'
+import { ArrowLeft, ArrowRight, GitBranch, Play, Upload } from 'lucide-react'
 import {
   distanceFromMap,
   formatDistance,
@@ -16,9 +17,16 @@ import { sampleGraph } from '../utils/graphData'
 import AlgorithmPlayer from '../visualization/AlgorithmPlayer'
 import InsightPanel from '../visualization/InsightPanel'
 import { useStepPlayer } from '../visualization/useStepPlayer'
+import {
+  clearOpenInAlgorithmsFlag,
+  loadWorkspace,
+  loadWorkspaceMeta,
+  saveWorkspace,
+  type WorkspaceGraph,
+} from '../workspace/graphWorkspace'
+import { describeUnreachable, validateGraphForAlgorithm } from '../workspace/validateAlgorithm'
 import './Algorithms.css'
 
-const KEY = 'graphlab-editor-v1'
 const names: Record<Algorithm, string> = {
   bfs: 'BFS',
   dfs: 'DFS',
@@ -26,17 +34,18 @@ const names: Record<Algorithm, string> = {
   bellman: 'Bellman–Ford',
 }
 
-const sample = sampleGraph()
-const initial: Saved = {
-  directed: sample.directed,
-  nodes: sample.nodes.map(n => ({ id: n.id, position: n.position })),
-  edges: sample.edges.map(e => ({ source: e.source, target: e.target, weight: Number(e.label ?? 1) })),
-}
-
 type Saved = {
   nodes: Array<{ id: string; position?: { x: number; y: number } }>
   edges: Array<{ source: string; target: string; weight?: number; label?: string }>
   directed: boolean
+}
+
+function workspaceToSaved(doc: WorkspaceGraph): Saved {
+  return {
+    directed: doc.directed,
+    nodes: doc.nodes.map(n => ({ id: n.id, position: n.position })),
+    edges: doc.edges.map(e => ({ source: e.source, target: e.target, weight: e.weight })),
+  }
 }
 
 function toSaved(doc: { directed: boolean; nodes: Node[]; edges: Edge[] }): Saved {
@@ -48,6 +57,38 @@ function toSaved(doc: { directed: boolean; nodes: Node[]; edges: Edge[] }): Save
       target: e.target,
       weight: Number(e.label ?? 1),
     })),
+  }
+}
+
+function defaultDemo(): { document: Saved; start: string; end: string; notice: string; demoId: DemoGraphId | 'custom' } {
+  const sample = sampleGraph()
+  return {
+    demoId: 'weighted',
+    start: 'A',
+    end: 'F',
+    notice: 'Wczytano graf ważony. Uruchom BFS, DFS lub Dijkstrę, aby zobaczyć szczegółową animację.',
+    document: {
+      directed: sample.directed,
+      nodes: sample.nodes.map(n => ({ id: n.id, position: n.position })),
+      edges: sample.edges.map(e => ({ source: e.source, target: e.target, weight: Number(e.label ?? 1) })),
+    },
+  }
+}
+
+function bootFromEditor(): { document: Saved; start: string; end: string; notice: string; demoId: DemoGraphId | 'custom' } | null {
+  const workspace = loadWorkspace()
+  if (!workspace || workspace.nodes.length === 0) return null
+  clearOpenInAlgorithmsFlag()
+  return {
+    demoId: 'custom',
+    document: workspaceToSaved(workspace),
+    start: workspace.start && workspace.nodes.some(n => n.id === workspace.start)
+      ? workspace.start
+      : workspace.nodes[0].id,
+    end: workspace.end && workspace.nodes.some(n => n.id === workspace.end)
+      ? workspace.end
+      : workspace.nodes.at(-1)!.id,
+    notice: `Wczytano graf z edytora (${workspace.nodes.length} wierzchołków, ${workspace.edges.length} krawędzi). Rozmieszczenie zostało zachowane.`,
   }
 }
 
@@ -66,13 +107,20 @@ function pathUsesEdge(path: string[], source: string, target: string, directed: 
 }
 
 export default function Algorithms() {
-  const [document, setDocument] = useState<Saved>(initial)
+  const location = useLocation()
+  const openedFromEditor = Boolean((location.state as { fromEditor?: boolean } | null)?.fromEditor)
+    || Boolean(loadWorkspaceMeta()?.openInAlgorithms)
+  const boot = openedFromEditor ? bootFromEditor() : null
+  const initial = boot ?? defaultDemo()
+
+  const [document, setDocument] = useState<Saved>(initial.document)
   const [algorithm, setAlgorithm] = useState<Algorithm>('bfs')
-  const [start, setStart] = useState('A')
-  const [end, setEnd] = useState('F')
-  const [demoId, setDemoId] = useState<DemoGraphId | 'custom'>('weighted')
+  const [start, setStart] = useState(initial.start)
+  const [end, setEnd] = useState(initial.end)
+  const [demoId, setDemoId] = useState<DemoGraphId | 'custom'>(initial.demoId)
   const [run, setRun] = useState<Run | null>(null)
-  const [notice, setNotice] = useState('Wczytano graf ważony. Uruchom BFS, DFS lub Dijkstrę, aby zobaczyć szczegółową animację.')
+  const [notice, setNotice] = useState(initial.notice)
+  const [hints, setHints] = useState<string[]>([])
   const player = useStepPlayer()
   const { bind, seek } = player
 
@@ -102,19 +150,19 @@ export default function Algorithms() {
 
   const loadSaved = () => {
     try {
-      const raw = localStorage.getItem(KEY)
-      if (!raw) {
-        setNotice('Najpierw zapisz graf w zakładce Edytor grafów.')
+      const workspace = loadWorkspace()
+      if (!workspace || workspace.nodes.length === 0) {
+        setNotice('Najpierw zapisz lub wyślij graf z zakładki Edytor grafów.')
         return
       }
-      const parsed: unknown = JSON.parse(raw)
-      const checked = fromEditor(parsed)
-      setDocument(parsed as Saved)
-      setStart(checked.vertices[0] ?? '')
-      setEnd(checked.vertices.at(-1) ?? '')
+      const checked = fromEditor(workspace)
+      setDocument(workspaceToSaved(workspace))
+      setStart(workspace.start && checked.vertices.includes(workspace.start) ? workspace.start : checked.vertices[0] ?? '')
+      setEnd(workspace.end && checked.vertices.includes(workspace.end) ? workspace.end : checked.vertices.at(-1) ?? '')
       setDemoId('custom')
       setRun(null)
-      setNotice('Wczytano graf zapisany w edytorze.')
+      setHints([])
+      setNotice('Wczytano graf zapisany w edytorze. Rozmieszczenie wierzchołków zostało zachowane.')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Nie udało się wczytać grafu')
     }
@@ -124,25 +172,47 @@ export default function Algorithms() {
     const demo = DEMO_GRAPHS.find(item => item.id === id)
     if (!demo) return
     const built = demo.build()
-    setDocument(toSaved(built))
+    const saved = toSaved(built)
+    setDocument(saved)
     setStart(demo.start)
     setEnd(demo.end)
     setDemoId(id)
     setRun(null)
+    setHints([])
     setNotice(`Wczytano przykład: ${demo.label}. ${demo.description}`)
+    saveWorkspace({
+      version: 1,
+      directed: saved.directed,
+      nodes: saved.nodes.map(n => ({ id: n.id, position: n.position ?? { x: 0, y: 0 } })),
+      edges: saved.edges.map(e => ({ source: e.source, target: e.target, weight: Number(e.weight ?? 1) })),
+      start: demo.start,
+      end: demo.end,
+    }, { source: 'demo' })
   }
 
   const execute = () => {
+    const validation = validateGraphForAlgorithm(graph, algorithm, start, end)
+    if (!validation.ok) {
+      setRun(null)
+      setHints(validation.messages)
+      setNotice(`${validation.title}. ${validation.messages[0] ?? ''}`)
+      return
+    }
     try {
       const result = runAlgorithm(graph, algorithm, start, end)
       setRun(result)
-      setNotice(
-        result.error
-          ?? `Obliczenia zakończone w ${result.durationMs.toFixed(3)} ms (bez animacji): ${result.steps.length} kroków animacji, ${result.examinedEdges} analizowanych krawędzi, ${result.reachable.length} osiągalnych wierzchołków.`,
-      )
+      const unreachable = describeUnreachable(graph, result.reachable, start)
+      const base = result.error
+        ?? `Obliczenia zakończone w ${result.durationMs.toFixed(3)} ms (bez animacji): ${result.steps.length} kroków animacji, ${result.examinedEdges} analizowanych krawędzi, ${result.reachable.length} osiągalnych wierzchołków.`
+      setNotice(unreachable ? `${base} ${unreachable}` : base)
+      setHints([
+        ...validation.messages,
+        ...(unreachable ? [unreachable] : []),
+      ])
     } catch (error) {
       setRun(null)
-      setNotice(error instanceof Error ? error.message : 'Błąd algorytmu')
+      setHints([])
+      setNotice(error instanceof Error ? error.message : 'Nie udało się uruchomić algorytmu. Sprawdź graf i spróbuj ponownie.')
     }
   }
 
@@ -249,7 +319,12 @@ export default function Algorithms() {
             historia operacji oraz struktury danych.
           </p>
         </div>
-        <span className="version-pill">Tryb edukacyjny</span>
+        <div className="heading-actions">
+          <Link to="/editor" className="btn btn-outline">
+            <ArrowLeft size={15} /> Wróć do edytora
+          </Link>
+          <span className="version-pill">Tryb edukacyjny</span>
+        </div>
       </div>
 
       <div className="algo-workspace">
@@ -310,12 +385,22 @@ export default function Algorithms() {
             <button className="algo-btn" onClick={loadSaved}>
               <Upload size={16} /> Wczytaj z edytora
             </button>
+            <Link className="algo-btn" to="/editor">
+              <ArrowLeft size={16} /> Edytuj ten graf
+            </Link>
             <div className="algo-summary">
               <strong>Graf</strong>
               <span>{graph.vertices.length} wierzchołków</span>
               <span>{graph.links.length} krawędzi</span>
               <span>{graph.directed ? 'Skierowany' : 'Nieskierowany'}</span>
+              <span>{demoId === 'custom' ? 'Źródło: edytor' : 'Źródło: przykład'}</span>
             </div>
+            {hints.length > 0 && (
+              <div className="algo-hints">
+                <strong>Podpowiedzi</strong>
+                {hints.map(hint => <p key={hint}>{hint}</p>)}
+              </div>
+            )}
             <div className="algo-legend">
               <span><i className="algo-dot algo-dot-active" /> bieżący</span>
               <span><i className="algo-dot algo-dot-frontier" /> w strukturze</span>
@@ -323,8 +408,8 @@ export default function Algorithms() {
               <span><i className="algo-dot algo-dot-path" /> ścieżka wyniku</span>
             </div>
             <p className="algo-note">
-              BFS i DFS pomijają wagi. Dijkstra wymaga wag nieujemnych i utrzymuje tablice d(v) oraz π(v).
-              Bellman–Ford pozostaje dostępny; pełny panel edukacyjny dla niego będzie w kolejnym etapie.
+              BFS i DFS działają na grafach skierowanych i nieskierowanych (bez wag).
+              Dijkstra wymaga wag nieujemnych. Pętle i krawędzie równoległe są zablokowane w edytorze.
             </p>
           </div>
         </section>
@@ -405,9 +490,9 @@ export default function Algorithms() {
           Czas obliczeń mierzy wyłącznie wykonanie algorytmu (`performance.now`), bez opóźnień animacji.
           Historia i suwak służą wyłącznie do prezentacji wcześniej wyliczonych stanów.
         </p>
-        <a href="/editor" className="algo-editor-link">
-          Przejdź do edytora grafów <ArrowRight size={15} />
-        </a>
+        <Link to="/editor" className="algo-editor-link">
+          Wróć do edytora bez utraty danych <ArrowRight size={15} />
+        </Link>
       </div>
     </div>
   )

@@ -464,7 +464,7 @@ function runBellmanFord(graph: Graph, start: string, end: string): Omit<Run, 'du
   const adjacency = buildAdjacency(graph)
   const steps: Step[] = []
   const order: string[] = []
-  const visited = new Set<string>()
+  const visited = new Set<string>([start])
   const parent = new Map<string, string>()
   const dist = new Map(graph.vertices.map(v => [v, Infinity]))
   dist.set(start, 0)
@@ -472,73 +472,190 @@ function runBellmanFord(graph: Graph, start: string, end: string): Omit<Run, 'du
   let examinedEdges = 0
   let error: string | undefined
   const structureKind: StructureKind = 'none'
+  const maxPasses = Math.max(graph.vertices.length - 1, 0)
 
-  const capture = (
-    current: string | null,
-    frontier: string[],
-    title: string,
-    message: string,
-    event: StepEvent,
-    activeEdge?: string,
-  ) => {
+  const reachableNow = () =>
+    graph.vertices.filter(v => Number.isFinite(dist.get(v)!))
+
+  const capture = (partial: Omit<Step, 'visited' | 'frontier' | 'structureKind' | 'examinedEdges' | 'distances' | 'parents'> & {
+    frontier?: string[]
+    examinedEdges?: number
+    distances?: DistanceMap
+    parents?: ParentMap
+  }) => {
     steps.push({
-      current,
       visited: [...visited],
-      frontier: [...frontier],
       structureKind,
-      title,
-      message,
-      detail: message,
-      event,
-      pseudoLine: 1,
       examinedEdges,
-      activeEdge,
       distances: snapshotDistances(dist, graph.vertices),
       parents: snapshotParents(parent, graph.vertices),
+      frontier: partial.frontier ?? reachableNow(),
+      ...partial,
     })
   }
 
-  capture(null, [start], 'Inicjalizacja Bellmana–Forda', `Rozpoczęcie algorytmu BELLMAN–FORD od ${start}`, 'init')
+  capture({
+    current: start,
+    event: 'init',
+    pseudoLine: 1,
+    title: 'Inicjalizacja Bellmana–Forda',
+    message: `d(${start}) ← 0, pozostałe odległości ← ∞, poprzedniki ← nil.`,
+    detail:
+      `Bellman–Ford wykonuje do |V|−1 = ${maxPasses} pełnych przejść po wszystkich krawędziach. ` +
+      'Każde przejście może poprawić oszacowania odległości poprzez relaksację. Algorytm dopuszcza wagi ujemne, a po głównej pętli sprawdza, czy istnieje osiągalny cykl ujemny.',
+    reason: 'Start ma odległość 0, bo ścieżka od siebie do siebie nic nie kosztuje.',
+    frontier: [start],
+  })
 
   const arcs = [
     ...graph.links,
     ...(!graph.directed ? graph.links.map(e => ({ source: e.target, target: e.source, weight: e.weight })) : []),
   ]
 
-  for (let i = 1; i < graph.vertices.length; i++) {
+  for (let pass = 1; pass <= maxPasses; pass++) {
     let changed = false
+    capture({
+      current: null,
+      event: 'visit',
+      pseudoLine: 2,
+      title: `Iteracja ${pass} z ${maxPasses}`,
+      message: `Rozpoczęcie ${pass}. przejścia po wszystkich ${arcs.length} łukach grafu.`,
+      detail:
+        `W i-tym przebiegu odległości mogą zostać poprawione ścieżkami zawierającymi co najwyżej i krawędzi. ` +
+        'Jeśli w całym przejściu nic się nie zmieni, wcześniejsze zakończenie jest bezpieczne.',
+      reason: `Dopuszczalna liczba przebiegów wynosi |V|−1 = ${maxPasses}.`,
+      frontier: reachableNow(),
+    })
+
     for (const { source, target, weight } of arcs) {
       operations++
       examinedEdges++
-      if (Number.isFinite(dist.get(source)!) && dist.get(source)! + weight < dist.get(target)!) {
-        dist.set(target, dist.get(source)! + weight)
+      const edgeKey = `${source}|${target}`
+      const from = dist.get(source)!
+      const previous = dist.get(target)!
+      const previousFinite = Number.isFinite(previous) ? previous : null
+      const fromFinite = Number.isFinite(from)
+
+      if (!fromFinite) {
+        capture({
+          current: source,
+          event: 'skip',
+          pseudoLine: 4,
+          activeEdge: edgeKey,
+          title: `Krawędź ${source} → ${target}: źródło nieosiągalne`,
+          message: `Pominięto relaksację — d(${source}) = ∞, więc nie da się poprawić d(${target}).`,
+          detail:
+            `Analizujemy krawędź ${source} → ${target} o wadze ${weight}. Dopóki ${source} nie ma skończonej odległości od startu, ` +
+            'żadna ścieżka przez tę krawędź nie jest jeszcze znana.',
+          reason: `d(${source}) = ∞ — brak sensownego kandydata.`,
+          frontier: reachableNow(),
+        })
+        continue
+      }
+
+      const via = from + weight
+      if (via < previous) {
+        dist.set(target, via)
         parent.set(target, source)
         changed = true
-        if (!visited.has(source)) {
-          visited.add(source)
-          order.push(source)
+        if (!visited.has(target)) {
+          visited.add(target)
+          order.push(target)
         }
-        capture(
-          source,
-          [target],
-          `Relaksacja ${source} → ${target}`,
-          `Iteracja ${i}: relaksacja ${source} → ${target}`,
-          'relax',
-          `${source}|${target}`,
-        )
+        if (!visited.has(source) && source !== start) {
+          visited.add(source)
+          if (!order.includes(source)) order.push(source)
+        }
+        capture({
+          current: target,
+          event: 'relax',
+          pseudoLine: 3,
+          activeEdge: edgeKey,
+          title: `Relaksacja ${source} → ${target}`,
+          message: `Iteracja ${pass}: d(${target}): ${formatDistance(previousFinite)} → ${formatDistance(via)}. π(${target}) = ${source}.`,
+          detail:
+            `Ścieżka przez ${source} poprawia oszacowanie: d(${source}) + w(${source},${target}) = ${formatDistance(from)} + ${weight} = ${formatDistance(via)}. ` +
+            `Poprzednia wartość d(${target}) wynosiła ${formatDistance(previousFinite)}, więc aktualizujemy tablicę odległości i poprzedników.`,
+          reason: `${formatDistance(via)} < ${formatDistance(previousFinite)} — relaksacja jest konieczna.`,
+          distanceUpdates: [{ vertex: target, previous: previousFinite, next: via }],
+          frontier: reachableNow(),
+        })
+      } else {
+        capture({
+          current: source,
+          event: 'skip',
+          pseudoLine: 4,
+          activeEdge: edgeKey,
+          title: `Krawędź ${source} → ${target}: bez poprawy`,
+          message: `Iteracja ${pass}: kandydat ${formatDistance(via)} nie poprawia d(${target}) = ${formatDistance(previousFinite)}.`,
+          detail:
+            `Sprawdzamy krawędź ${source} → ${target} (waga ${weight}). Wyliczony koszt ${formatDistance(via)} nie jest lepszy od bieżącego oszacowania ${formatDistance(previousFinite)}, ` +
+            'dlatego odległość i poprzednik pozostają bez zmian.',
+          reason: `${formatDistance(via)} ≥ ${formatDistance(previousFinite)} — brak relaksacji.`,
+          frontier: reachableNow(),
+        })
       }
     }
-    if (!changed) break
+
+    if (!changed) {
+      capture({
+        current: null,
+        event: 'select',
+        pseudoLine: 2,
+        title: `Iteracja ${pass}: brak zmian`,
+        message: 'Żadna krawędź nie poprawiła odległości — wcześniejsze zakończenie pętli głównej.',
+        detail:
+          'Gdy pełne przejście nie wykonuje żadnej relaksacji, kolejne iteracje też nic by nie zmieniły (przy braku ujemnych cykli w kolejnym teście).',
+        reason: 'Optymalizacja: early-stop po stabilizacji odległości.',
+        frontier: reachableNow(),
+      })
+      break
+    }
   }
 
-  const affected = new Set<string>()
+  const seedNegative = new Set<string>()
+  capture({
+    current: null,
+    event: 'examine',
+    pseudoLine: 5,
+    title: 'Test ujemnego cyklu',
+    message: 'Dodatkowe przejście: czy któraś krawędź nadal poprawia odległość?',
+    detail:
+      'Jeśli po |V|−1 przebiegach da się jeszcze zrelaksować krawędź, istnieje cykl o ujemnej sumie wag osiągalny ze startu. ' +
+      'Wierzchołki, do których taki cykl „dociera”, nie mają dobrze określonych najkrótszych ścieżek.',
+    reason: 'To obowiązkowy krok diagnostyczny Bellmana–Forda.',
+    frontier: reachableNow(),
+  })
+
   for (const { source, target, weight } of arcs) {
     operations++
     examinedEdges++
-    if (Number.isFinite(dist.get(source)!) && dist.get(source)! + weight < dist.get(target)!) {
-      affected.add(target)
+    const from = dist.get(source)!
+    const previous = dist.get(target)!
+    const edgeKey = `${source}|${target}`
+    if (Number.isFinite(from) && from + weight < previous) {
+      seedNegative.add(target)
+      capture({
+        current: target,
+        event: 'relax',
+        pseudoLine: 5,
+        activeEdge: edgeKey,
+        title: `Ujemny cykl: wciąż da się poprawić ${target}`,
+        message: `d(${source}) + ${weight} = ${formatDistance(from + weight)} < d(${target}) = ${formatDistance(Number.isFinite(previous) ? previous : null)}.`,
+        detail:
+          `Krawędź ${source} → ${target} nadal obniża odległość po |V|−1 iteracjach. To dowód na osiągalny cykl ujemny wpływający na ${target}.`,
+        reason: 'Dalsze zmniejszanie odległości byłoby możliwe w nieskończoność.',
+        distanceUpdates: [{
+          vertex: target,
+          previous: Number.isFinite(previous) ? previous : null,
+          next: from + weight,
+        }],
+        frontier: reachableNow(),
+      })
     }
   }
+
+  const affected = new Set<string>(seedNegative)
   if (affected.size) {
     const queue = [...affected]
     for (let i = 0; i < queue.length; i++) {
@@ -549,36 +666,74 @@ function runBellmanFord(graph: Graph, start: string, end: string): Omit<Run, 'du
         }
       }
     }
-    if (affected.has(end)) error = 'Ujemny cykl osiągalny ze startu wpływa na wynik dla celu'
+    capture({
+      current: null,
+      event: 'examine',
+      pseudoLine: 5,
+      title: 'Propagacja wpływu ujemnego cyklu',
+      message: `Wierzchołki dotknięte ujemnym cyklem: ${[...affected].join(', ')}.`,
+      detail:
+        'Z wierzchołków, których odległość dało się jeszcze poprawić, propagujemy wpływ po krawędziach wychodzących. ' +
+        'Jeśli cel należy do tego zbioru, najkrótsza ścieżka do celu nie jest dobrze określona.',
+      reason: affected.has(end)
+        ? `Cel ${end} jest osiągalny z obszaru ujemnego cyklu — wynik dla ścieżki do ${end} jest nieważny.`
+        : `Cel ${end} nie należy do zbioru dotkniętego; lokalny cykl może nie psuć konkretnej ścieżki do ${end}, ale algorytm i tak sygnalizuje problem w grafie.`,
+      frontier: [...affected],
+    })
+    if (affected.has(end)) {
+      error = 'Ujemny cykl osiągalny ze startu wpływa na wynik dla celu'
+    }
+  } else {
+    capture({
+      current: null,
+      event: 'select',
+      pseudoLine: 5,
+      title: 'Brak ujemnego cyklu',
+      message: 'Żadna krawędź nie poprawia już odległości — cykl ujemny nie wpływa na wynik.',
+      detail: 'Możemy zaufać tablicy d(·) i π(·) dla wszystkich wierzchołków o skończonej odległości.',
+      reason: 'Test V-tego przebiegu nie znalazł dodatkowej relaksacji.',
+      frontier: reachableNow(),
+    })
   }
 
-  const distance = Number.isFinite(dist.get(end)!) && !error ? dist.get(end)! : null
-  if (!error && distance !== null && !visited.has(end)) {
-    visited.add(end)
-    order.push(end)
-  }
-
-  const path = !error ? reconstructPath(start, end, parent) : []
-  const parents = snapshotParents(parent, graph.vertices)
   const distances = snapshotDistances(dist, graph.vertices)
-  const reachable = [
-    ...new Set([
-      ...order,
-      ...Object.entries(distances).filter(([, d]) => d !== null).map(([v]) => v),
-    ]),
-  ]
+  const parents = snapshotParents(parent, graph.vertices)
+  const reachable = graph.vertices.filter(v => distances[v] !== null)
+  for (const v of reachable) {
+    if (!visited.has(v)) visited.add(v)
+    if (v !== start && !order.includes(v)) order.push(v)
+  }
 
-  capture(
-    null,
-    [],
-    'Zakończenie Bellmana–Forda',
-    error ?? (path.length ? `Zakończono. Trasa: ${path.join(' → ')}` : 'Nie znaleziono ścieżki'),
-    'done',
-  )
+  const distance = !error && distances[end] !== null ? distances[end] : null
+  const path = !error ? reconstructPath(start, end, parent) : []
+  const distanceSummary = reachable
+    .map(v => `${v}: ${formatDistance(distances[v])}`)
+    .join(', ')
+
+  capture({
+    current: null,
+    event: 'done',
+    pseudoLine: 6,
+    title: 'Zakończenie Bellmana–Forda',
+    message: error
+      ? error
+      : path.length
+        ? `Najkrótsza ścieżka do ${end}: ${path.join(' → ')} (koszt ${formatDistance(distance)}).`
+        : `Brak ścieżki do ${end}. Odległości osiągalnych: ${distanceSummary || '—'}.`,
+    detail:
+      `Odległości końcowe do osiągalnych wierzchołków: ${distanceSummary || 'brak'}. ` +
+      (error
+        ? 'Z powodu ujemnego cyklu nie prezentujemy wiarygodnej ścieżki do celu.'
+        : 'Możesz odczytać ścieżkę z tablicy poprzedników π(·) dla dowolnego osiągalnego wierzchołka.'),
+    reason: error
+      ? 'Ujemny cykl unieważnia klasyczne pojęcie najkrótszej ścieżki dla dotkniętych wierzchołków.'
+      : 'Po stabilizacji odległości wynik jest kompletny.',
+    frontier: reachable,
+  })
 
   return {
     steps,
-    order,
+    order: order.length ? order : reachable.filter(v => v !== start),
     path,
     reachable,
     distance,

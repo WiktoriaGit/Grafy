@@ -49,3 +49,59 @@ export const getSavedGraphs = () => apiRequest<SavedGraphInfo[]>('/graphs')
 export const getSavedGraph = (id: number) => apiRequest<SavedGraph>(`/graphs/${id}`)
 export const saveGraph = (graph: GraphToSave) => apiRequest<{ id: number; name: string }>('/graphs', { method: 'POST', body: JSON.stringify(graph) })
 export const deleteSavedGraph = (id: number) => apiRequest<void>(`/graphs/${id}`, { method: 'DELETE' })
+
+export type ExperimentToSave = {
+  algorithm: string
+  vertexCount: number
+  edgeCount: number
+  density: number
+  repetitions: number
+  seed?: number | null
+  meanMs: number
+  minMs: number
+  maxMs: number
+  operations?: number | null
+}
+
+export async function checkApiHealth(): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_URL}/health`)
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+export const saveExperiment = (experiment: ExperimentToSave) =>
+  apiRequest<{ id: number }>('/experiments', { method: 'POST', body: JSON.stringify(experiment) })
+
+export async function saveExperimentsBestEffort(experiments: ExperimentToSave[]): Promise<{ ok: boolean; saved: number; message: string }> {
+  const healthy = await checkApiHealth()
+  if (!healthy) {
+    return {
+      ok: false,
+      saved: 0,
+      message: 'Backend SQLite niedostępny — wyniki zapisano tylko lokalnie w przeglądarce (localStorage: graphlab-benchmarks-v2).',
+    }
+  }
+  let saved = 0
+  try {
+    for (const item of experiments) {
+      await saveExperiment(item)
+      saved++
+    }
+    return {
+      ok: true,
+      saved,
+      message: `Zapisano lokalnie oraz ${saved} pomiar(ów) w SQLite (API :3001).`,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      saved,
+      message: error instanceof Error
+        ? `Zapisano lokalnie. SQLite: częściowy błąd (${saved} OK) — ${error.message}`
+        : 'Zapisano lokalnie. Nie udało się dokończyć zapisu SQLite.',
+    }
+  }
+}

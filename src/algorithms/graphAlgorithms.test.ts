@@ -120,6 +120,51 @@ describe('Najkrotsze sciezki', () => {
     }, 'bellman', 'A', 'C')
     expect(result.error).toBeTruthy()
     expect(result.distance).toBeNull()
+    expect(result.steps.some(step => /ujemn/i.test(step.title) || /ujemn/i.test(step.message))).toBe(true)
+  })
+
+  it('Bellman-Ford zapisuje iteracje, relaksacje i uzasadnienia', () => {
+    const result = runAlgorithm({
+      directed: true,
+      vertices: ['A', 'B', 'C'],
+      links: [
+        { source: 'A', target: 'B', weight: 4 },
+        { source: 'A', target: 'C', weight: 8 },
+        { source: 'B', target: 'C', weight: -3 },
+      ],
+    }, 'bellman', 'A', 'C')
+    expect(result.steps.some(step => step.event === 'init')).toBe(true)
+    expect(result.steps.some(step => step.event === 'visit' && /Iteracja/i.test(step.title))).toBe(true)
+    expect(result.steps.some(step => step.event === 'relax' && step.distanceUpdates?.length)).toBe(true)
+    expect(result.steps.some(step => step.event === 'skip' && step.reason)).toBe(true)
+    expect(result.steps.every(step => step.detail && step.pseudoLine >= 1)).toBe(true)
+    expect(result.distances.A).toBe(0)
+    expect(result.distances.B).toBe(4)
+    expect(result.distances.C).toBe(1)
+    expect(result.steps.at(-1)?.distances?.C).toBe(1)
+  })
+
+  it('Bellman-Ford na nieskierowanym grafie z wagami nieujemnymi', () => {
+    const result = runAlgorithm({
+      directed: false,
+      vertices: ['A', 'B', 'C'],
+      links: [
+        { source: 'A', target: 'B', weight: 2 },
+        { source: 'B', target: 'C', weight: 3 },
+      ],
+    }, 'bellman', 'A', 'C')
+    expect(result.error).toBeFalsy()
+    expect(result.distance).toBe(5)
+    expect(result.path).toEqual(['A', 'B', 'C'])
+  })
+
+  it('ujemna waga na nieskierowanym grafie tworzy cykl 2-krawedziowy', () => {
+    const result = runAlgorithm({
+      directed: false,
+      vertices: ['A', 'B'],
+      links: [{ source: 'A', target: 'B', weight: -1 }],
+    }, 'bellman', 'A', 'B')
+    expect(result.error).toBeTruthy()
   })
 })
 

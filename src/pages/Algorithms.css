@@ -101,6 +101,32 @@
   margin: 0;
 }
 
+.algo-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 9px;
+  border: 1px solid #3f4f2f;
+  background: #182416;
+}
+
+.algo-hints strong {
+  color: #bbf7d0;
+  font-size: 11px;
+}
+
+.algo-hints p {
+  margin: 0;
+  color: #d9f99d;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+a.algo-btn {
+  text-decoration: none;
+}
+
 .algo-main {
   min-width: 0;
   display: flex;

@@ -1,3 +1,8 @@
+.graph-editor-tools .ge-help{margin:0 0 14px;padding:14px;border:1px solid #334155;border-radius:10px;background:#142033;color:#a8b6cb;font-size:11px;line-height:1.65}
+.graph-editor-tools .ge-help strong{display:block;color:#e2e8f0;margin-bottom:8px;font-size:12px}
+.graph-editor-tools .ge-help ol{margin:0 0 10px;padding-left:18px}
+.graph-editor-tools .ge-help p{margin:0}
+.graph-editor-tools a.ge-action{text-decoration:none}
 .graph-editor-tools .ge-action { width:100%; display:flex; align-items:center; justify-content:center; gap:9px; background:#1b2a42; border:1px solid #35445f; color:#dbe5f5; border-radius:9px; padding:11px 10px; margin:8px 0; font-size:12px; font-weight:600; transition:background .15s; }
 .graph-editor-tools .ge-action:hover:not(:disabled) { background:#283957; }
 .graph-editor-tools .ge-action:disabled { opacity:.4; cursor:not-allowed; }
