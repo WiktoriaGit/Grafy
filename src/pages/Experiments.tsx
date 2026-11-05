@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   Activity,
   BarChart3,
@@ -11,12 +11,14 @@ import {
 } from 'lucide-react'
 import {
   algorithmLabels,
+  BENCHMARK_TASK_HINTS,
   exportCSV,
   loadResults,
   saveResults,
   type AlgorithmId,
   type BenchResult,
 } from '../utils/benchmark'
+import { COMPLEXITY_COMPARISON_NOTE } from '../utils/complexityCatalog'
 import {
   algorithmLimit,
   estimateEdgeCount,
@@ -36,7 +38,9 @@ const topologies: GraphTopology[] = ['erdos', 'complete', 'grid', 'tree', 'path'
 const fmt = (n: number) => n.toLocaleString('pl-PL', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 
 export default function Experiments() {
-  const [topology, setTopology] = useState<GraphTopology>('erdos')
+  const location = useLocation()
+  const scenarioSizes = new URLSearchParams(location.search).get('scenario') === 'sizes'
+  const [topology, setTopology] = useState<GraphTopology>(scenarioSizes ? 'path' : 'erdos')
   const [vertices, setVertices] = useState(100)
   const [seed, setSeed] = useState(12345)
   const [density, setDensity] = useState(10)
@@ -45,11 +49,15 @@ export default function Experiments() {
   const [weightMin, setWeightMin] = useState(1)
   const [weightMax, setWeightMax] = useState(20)
   const [directed, setDirected] = useState(false)
-  const [repetitions, setRepetitions] = useState(10)
+  const [repetitions, setRepetitions] = useState(scenarioSizes ? 5 : 10)
   const [selected, setSelected] = useState<AlgorithmId[]>(['bfs', 'dfs', 'dijkstra'])
   const [results, setResults] = useState<BenchResult[]>(loadResults)
   const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState(
+    scenarioSizes
+      ? 'Scenariusz F: uruchom pomiary dla 100, potem 1000, potem 10 000 wierzchołków (topologia „ścieżka” jest już ustawiona). Każdy rozmiar to osobny, realny pomiar — bez fikcyjnych wyników.'
+      : '',
+  )
   const [progress, setProgress] = useState(0)
   const [storageNote, setStorageNote] = useState(
     'Wyniki trafiają do localStorage (klucz graphlab-benchmarks-v2). SQLite jest używany, gdy API na :3001 działa.',
@@ -185,7 +193,9 @@ export default function Experiments() {
           <div className="eyebrow"><FlaskConical size={14} /> PERFORMANCE LAB</div>
           <h1>Eksperymenty wydajnościowe</h1>
           <p>
-            Generuj duże grafy i mierz czas algorytmów w Web Workerze — bez renderowania tysięcy wierzchołków w React Flow.
+            Generuj duże grafy i mierz czas lean-implementacji w Web Workerze — bez animacji i bez React Flow.
+            BFS/DFS: pełne przeszukiwanie osiągalnej części; Dijkstra/Bellman–Ford: najkrótsze ścieżki od źródła
+            (to inne problemy — nie traktuj ich czasów jako równoważnych). Czas generowania grafu jest osobny.
           </p>
         </div>
         <div className="heading-actions">
@@ -345,17 +355,20 @@ export default function Experiments() {
               </p>
             )}
 
-            <div className="bench-subtitle">ALGORYTMY</div>
+            <div className="bench-subtitle">ALGORYTMY (zadanie pomiarowe)</div>
             {ids.map(id => (
-              <label className="bench-check" key={id}>
-                <input
-                  type="checkbox"
-                  checked={selected.includes(id)}
-                  disabled={busy}
-                  onChange={() => toggle(id)}
-                />
-                <span>{algorithmLabels[id]}</span>
-              </label>
+              <div key={id} className="bench-algo-block">
+                <label className="bench-check">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(id)}
+                    disabled={busy}
+                    onChange={() => toggle(id)}
+                  />
+                  <span>{algorithmLabels[id]}</span>
+                </label>
+                <p className="bench-algo-hint">{BENCHMARK_TASK_HINTS[id]}</p>
+              </div>
             ))}
 
             <button
@@ -407,9 +420,11 @@ export default function Experiments() {
             </div>
           )}
           <div className="bench-note">
-            <b>Wartość edukacyjna:</b> złożoność czasowa opisuje wzrost kosztu wraz z rozmiarem wejścia (V, E),
-            a zmierzony czas zależy od implementacji, JIT, cache i obciążenia CPU. Dlatego małe czasy (&lt;1 ms)
-            trudno wiarygodnie porównywać — stosuj więcej powtórzeń i większe grafy. Przed serią wykonywana jest rozgrzewka (warm-up).
+            <b>Co mierzymy:</b> implementacje bez animacji (operacje benchmarku ≠ kroki wizualizacji).
+            Odchylenie σ to pierwiastek ze średniej kwadratów odchyleń od średniej (wariancja populacyjna, dzielnik = liczba powtórzeń).
+            <br />
+            <b>Wartość edukacyjna:</b> Big O opisuje tempo wzrostu kosztu względem V i E, a nie dokładne milisekundy.
+            {COMPLEXITY_COMPARISON_NOTE} Przed serią wykonywana jest rozgrzewka (warm-up).
           </div>
         </section>
       </div>

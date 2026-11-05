@@ -13,6 +13,7 @@ import {
   type Run,
 } from '../algorithms/graphAlgorithms'
 import { DEMO_GRAPHS, type DemoGraphId } from '../utils/demoGraphs'
+import { ALGORITHM_GUIDES } from '../utils/demoScenarios'
 import { sampleGraph } from '../utils/graphData'
 import AlgorithmPlayer from '../visualization/AlgorithmPlayer'
 import InsightPanel from '../visualization/InsightPanel'
@@ -106,15 +107,64 @@ function pathUsesEdge(path: string[], source: string, target: string, directed: 
   })
 }
 
+function bootFromScenario(scenario: string | null): {
+  document: Saved
+  start: string
+  end: string
+  notice: string
+  demoId: DemoGraphId | 'custom'
+  algorithm: Algorithm
+} | null {
+  if (scenario === 'dijkstra') {
+    const demo = DEMO_GRAPHS.find(item => item.id === 'weighted')!
+    const built = toSaved(demo.build())
+    return {
+      demoId: 'weighted',
+      document: built,
+      start: demo.start,
+      end: demo.end,
+      algorithm: 'dijkstra',
+      notice: 'Scenariusz B: Dijkstra na grafie ważonym. Uruchom algorytm i obserwuj relaksacje oraz ścieżkę do F.',
+    }
+  }
+  if (scenario === 'bellman') {
+    const demo = DEMO_GRAPHS.find(item => item.id === 'negative')!
+    const built = toSaved(demo.build())
+    return {
+      demoId: 'negative',
+      document: built,
+      start: demo.start,
+      end: demo.end,
+      algorithm: 'bellman',
+      notice: 'Scenariusz C: Bellman–Ford z ujemną wagą B→C (−3), bez ujemnego cyklu. Uruchom i śledź relaksacje.',
+    }
+  }
+  if (scenario === 'bfs-dfs') {
+    const demo = DEMO_GRAPHS.find(item => item.id === 'branched')!
+    const built = toSaved(demo.build())
+    return {
+      demoId: 'branched',
+      document: built,
+      start: demo.start,
+      end: demo.end,
+      algorithm: 'bfs',
+      notice: 'Scenariusz A (pojedynczy widok): graf rozgałęziony. Dla pełnego BFS vs DFS użyj modułu Porównanie.',
+    }
+  }
+  return null
+}
+
 export default function Algorithms() {
   const location = useLocation()
+  const scenario = new URLSearchParams(location.search).get('scenario')
   const openedFromEditor = Boolean((location.state as { fromEditor?: boolean } | null)?.fromEditor)
     || Boolean(loadWorkspaceMeta()?.openInAlgorithms)
+  const scenarioBoot = !openedFromEditor ? bootFromScenario(scenario) : null
   const boot = openedFromEditor ? bootFromEditor() : null
-  const initial = boot ?? defaultDemo()
+  const initial = boot ?? scenarioBoot ?? defaultDemo()
 
   const [document, setDocument] = useState<Saved>(initial.document)
-  const [algorithm, setAlgorithm] = useState<Algorithm>('bfs')
+  const [algorithm, setAlgorithm] = useState<Algorithm>(scenarioBoot?.algorithm ?? 'bfs')
   const [start, setStart] = useState(initial.start)
   const [end, setEnd] = useState(initial.end)
   const [demoId, setDemoId] = useState<DemoGraphId | 'custom'>(initial.demoId)
@@ -123,6 +173,7 @@ export default function Algorithms() {
   const [hints, setHints] = useState<string[]>([])
   const player = useStepPlayer()
   const { bind, seek } = player
+  const guide = ALGORITHM_GUIDES[algorithm]
 
   const graph: Graph = useMemo(() => fromEditor(document), [document])
   const step = run?.steps[player.index]
@@ -203,7 +254,7 @@ export default function Algorithms() {
       setRun(result)
       const unreachable = describeUnreachable(graph, result.reachable, start)
       const base = result.error
-        ?? `Obliczenia zakończone w ${result.durationMs.toFixed(3)} ms (bez animacji): ${result.steps.length} kroków animacji, ${result.examinedEdges} analizowanych krawędzi, ${result.reachable.length} osiągalnych wierzchołków.`
+        ?? `Obliczenia z przygotowaniem ${result.steps.length} kroków wizualizacji: ${result.durationMs.toFixed(3)} ms (bez pauz odtwarzania), ${result.examinedEdges} analizowanych krawędzi, ${result.reachable.length} osiągalnych wierzchołków.`
       setNotice(unreachable ? `${base} ${unreachable}` : base)
       setHints([
         ...validation.messages,
@@ -315,8 +366,8 @@ export default function Algorithms() {
           <div className="eyebrow"><GitBranch size={14} /> ALGORITHM EXPLORER</div>
           <h1>Wizualizacja algorytmów</h1>
           <p>
-            Profesjonalna, krokowa prezentacja BFS, DFS i Dijkstry: opisy decyzji, pseudokod,
-            historia operacji oraz struktury danych.
+            Krokowa prezentacja BFS, DFS, Dijkstry i Bellmana–Forda: opisy decyzji, pseudokod,
+            historia operacji oraz struktury danych. Najpierw wybierz algorytm lub przykład, potem kliknij „Uruchom algorytm”.
           </p>
         </div>
         <div className="heading-actions">
@@ -339,6 +390,12 @@ export default function Algorithms() {
                 ))}
               </select>
             </label>
+            <div className="algo-hints">
+              <strong>Zastosowanie</strong>
+              <p>{guide.use}</p>
+              <strong>Ograniczenia</strong>
+              <p>{guide.limits}</p>
+            </div>
             <label>
               Przykładowy graf
               <select
@@ -408,8 +465,8 @@ export default function Algorithms() {
               <span><i className="algo-dot algo-dot-path" /> ścieżka wyniku</span>
             </div>
             <p className="algo-note">
-              BFS i DFS działają na grafach skierowanych i nieskierowanych (bez wag).
-              Dijkstra wymaga wag nieujemnych. Pętle i krawędzie równoległe są zablokowane w edytorze.
+              BFS/DFS: kolejność odwiedzin (bez wag). Dijkstra: wagi nieujemne. Bellman–Ford: także wagi ujemne i wykrywanie ujemnego cyklu.
+              Pętle i krawędzie równoległe są zablokowane w edytorze.
             </p>
           </div>
         </section>
@@ -476,7 +533,7 @@ export default function Algorithms() {
           <strong>{displayDistance ?? '—'}</strong>
         </div>
         <div className="panel">
-          <small>Czas obliczeń (bez animacji)</small>
+          <small>Czas z przygotowaniem kroków</small>
           <strong>{run ? `${run.durationMs.toFixed(3)} ms` : '—'}</strong>
         </div>
       </div>
@@ -487,8 +544,9 @@ export default function Algorithms() {
         <p><b>Kolejność odwiedzin:</b> {run?.order.join(' → ') || '—'}</p>
         <p><b>Zbiór osiągalny:</b> {run?.reachable.join(', ') || '—'}</p>
         <p className="algo-note">
-          Czas obliczeń mierzy wyłącznie wykonanie algorytmu (`performance.now`), bez opóźnień animacji.
-          Historia i suwak służą wyłącznie do prezentacji wcześniej wyliczonych stanów.
+          Podany czas obejmuje wykonanie algorytmu edukacyjnego wraz z budową listy kroków wizualizacji
+          (`performance.now`), ale bez pauz odtwarzania. To nie jest czysty czas z modułu Eksperymenty
+          (tam Dijkstra używa kopca, a BFS/DFS nie zapisują kroków). Kroki animacji ≠ operacje benchmarku.
         </p>
         <Link to="/editor" className="algo-editor-link">
           Wróć do edytora bez utraty danych <ArrowRight size={15} />

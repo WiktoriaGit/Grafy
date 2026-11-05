@@ -48,6 +48,7 @@ export function computeTimeStats(times: number[]): TimeStats {
   const mean = sorted.reduce((a, b) => a + b, 0) / sorted.length
   const mid = Math.floor(sorted.length / 2)
   const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+  // Population standard deviation (divide by n). Documented in Results/Experiments UI.
   const variance = sorted.reduce((sum, value) => sum + (value - mean) ** 2, 0) / sorted.length
   return {
     mean,
@@ -206,18 +207,52 @@ export function dijkstraHeap(g: BenchGraph, source = 0): DijkstraResult {
   return { distances: dist, operations, reached: Number.isFinite(dist[n - 1]) }
 }
 
-export function runBenchmarkAlgorithm(g: BenchGraph, id: AlgorithmId): { operations: number; reached: boolean } {
+export type BenchmarkRunOptions = {
+  /** Source vertex for traversal / shortest paths (default 0). */
+  source?: number
+}
+
+export type BenchmarkRunResult = {
+  operations: number
+  /** Whether vertex n−1 is reachable from the source after the full run. */
+  reached: boolean
+  /** Number of vertices discovered/settled from the source (search / Dijkstra). */
+  visitedCount?: number
+  distances?: Float64Array | number[]
+}
+
+/**
+ * Benchmark task (explicit):
+ * - BFS/DFS: full exploration of the reachable component from `source` (no early-exit on a target).
+ * - Dijkstra / Bellman–Ford: single-source shortest paths from `source` (distances to all reachable vertices).
+ * Do not treat search timings as interchangeable with shortest-path timings.
+ *
+ * Graph representation: `adjacency[u]` lists only existing directed arcs.
+ * Undirected generators store each undirected edge once in `edges` and both directions in `adjacency`.
+ * Bellman–Ford therefore relaxes only via adjacency (never fabricates reverse arcs).
+ */
+export function runBenchmarkAlgorithm(
+  g: BenchGraph,
+  id: AlgorithmId,
+  options?: BenchmarkRunOptions,
+): BenchmarkRunResult {
   const n = g.adjacency.length
+  const source = options?.source ?? 0
+  if (!Number.isInteger(source) || source < 0 || source >= n) {
+    throw new Error('Nieprawidłowy wierzchołek źródłowy benchmarku.')
+  }
   const target = n - 1
-  let operations = 0
+
   if (id === 'bfs' || id === 'dfs') {
     const seen = new Uint8Array(n)
-    const queue = [0]
-    seen[0] = 1
+    const queue = [source]
+    seen[source] = 1
     let head = 0
+    let operations = 0
+    let visitedCount = 0
     while (id === 'bfs' ? head < queue.length : queue.length > 0) {
       const v = id === 'bfs' ? queue[head++] : queue.pop()!
-      if (v === target) return { operations, reached: true }
+      visitedCount++
       for (const e of g.adjacency[v]) {
         operations++
         if (!seen[e.to]) {
@@ -226,30 +261,73 @@ export function runBenchmarkAlgorithm(g: BenchGraph, id: AlgorithmId): { operati
         }
       }
     }
-    return { operations, reached: false }
+    return {
+      operations,
+      reached: seen[target] === 1,
+      visitedCount,
+    }
   }
+
   if (id === 'dijkstra') {
-    const result = dijkstraHeap(g)
-    return { operations: result.operations, reached: result.reached }
+    const result = dijkstraHeap(g, source)
+    return {
+      operations: result.operations,
+      reached: result.reached,
+      distances: result.distances,
+      visitedCount: result.distances.filter(d => Number.isFinite(d)).length,
+    }
   }
+
+  // Bellman–Ford: relax only arcs present in adjacency (directed-safe; undirected already duplicated there).
   const dist = new Float64Array(n).fill(Infinity)
-  dist[0] = 0
-  for (let i = 1; i < n; i++) {
+  dist[source] = 0
+  let operations = 0
+  for (let iter = 1; iter < n; iter++) {
     let changed = false
-    for (const e of g.edges) {
-      operations += 2
-      if (dist[e.from] + e.weight < dist[e.to]) {
-        dist[e.to] = dist[e.from] + e.weight
-        changed = true
-      }
-      if (dist[e.to] + e.weight < dist[e.from]) {
-        dist[e.from] = dist[e.to] + e.weight
-        changed = true
+    for (let u = 0; u < n; u++) {
+      if (!Number.isFinite(dist[u])) continue
+      for (const e of g.adjacency[u]) {
+        operations++
+        const candidate = dist[u] + e.weight
+        if (candidate < dist[e.to]) {
+          dist[e.to] = candidate
+          changed = true
+        }
       }
     }
     if (!changed) break
   }
-  return { operations, reached: Number.isFinite(dist[target]) }
+
+  // Extra pass: detect a negative cycle reachable from the source (relevant if negative weights are allowed).
+  for (let u = 0; u < n; u++) {
+    if (!Number.isFinite(dist[u])) continue
+    for (const e of g.adjacency[u]) {
+      operations++
+      if (dist[u] + e.weight < dist[e.to]) {
+        return {
+          operations,
+          reached: false,
+          distances: dist,
+          visitedCount: [...dist].filter(d => Number.isFinite(d)).length,
+        }
+      }
+    }
+  }
+
+  return {
+    operations,
+    reached: Number.isFinite(dist[target]),
+    distances: dist,
+    visitedCount: [...dist].filter(d => Number.isFinite(d)).length,
+  }
+}
+
+/** Short Polish description of what each benchmark algorithm measures. */
+export const BENCHMARK_TASK_HINTS: Record<AlgorithmId, string> = {
+  bfs: 'Pełne przeszukiwanie wszerz osiągalnej części grafu od źródła (bez wcześniejszego przerwania na celu).',
+  dfs: 'Pełne przeszukiwanie w głąb osiągalnej części grafu od źródła (bez wcześniejszego przerwania na celu).',
+  dijkstra: 'Najkrótsze ścieżki od źródła (implementacja z kopcem binarnym) — inny problem niż samo BFS/DFS.',
+  bellman: 'Najkrótsze ścieżki od źródła (Bellman–Ford); relaksacja wyłącznie istniejących łuków w liście sąsiedztwa.',
 }
 
 export type MeasureMeta = {
@@ -269,6 +347,7 @@ export type BenchmarkRequest = GeneratorParams & {
 export function measure(g: BenchGraph, id: AlgorithmId, repetitions: number, meta?: Partial<MeasureMeta>): BenchResult {
   if (!Number.isInteger(repetitions) || repetitions < 1) throw new Error('Nieprawidłowa liczba powtórzeń.')
   // Warm-up reduces one-time JIT effects; results remain environment-dependent.
+  // Timing wraps only the lean algorithm — never educational step generation or React Flow animation.
   runBenchmarkAlgorithm(g, id)
   const times: number[] = []
   let operations = 0

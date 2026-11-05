@@ -266,8 +266,9 @@ export function buildObservations(left: SideResult, right: SideResult): string[]
   }
 
   notes.push(
-    'Czas obliczeń pochodzi z `performance.now()` wokół samego algorytmu i nie obejmuje pauz animacji. ' +
-      'Przy bardzo krótkich pomiarach nie ogłaszamy zwycięzcy na podstawie jednego uruchomienia — wynik może się wahać.',
+    'Czas obejmuje wykonanie algorytmu wraz z przygotowaniem kroków edukacyjnych (`performance.now`), ale nie pauzy odtwarzania animacji. ' +
+      'To nie jest ten sam pomiar co w Eksperymentach (implementacje bez listy kroków). ' +
+      'Przy bardzo krótkich czasach nie ogłaszamy zwycięzcy na podstawie jednego uruchomienia.',
   )
 
   return notes
@@ -412,8 +413,8 @@ export const METRIC_EXPLANATIONS: Array<{ key: keyof ComparisonMetrics | 'timing
   { key: 'edges', label: 'Liczba krawędzi', explanation: 'Liczba połączeń w grafie wejściowym (ta sama dla obu przebiegów).' },
   { key: 'visitedVertices', label: 'Odwiedzone wierzchołki', explanation: 'Ile wierzchołków algorytm oznaczył jako osiągnięte / włączone do wyniku.' },
   { key: 'examinedEdges', label: 'Analizowane krawędzie', explanation: 'Ile razy algorytm przeglądał krawędzie (dla MST przybliżone przez licznik operacji).' },
-  { key: 'animationSteps', label: 'Kroki animacji', explanation: 'Liczba stanów zapisanych do prezentacji — nie jest miarą złożoności asymptotycznej.' },
-  { key: 'operations', label: 'Operacje algorytmu', explanation: 'Licznik wewnętrznych operacji zaimplementowany w silniku (np. ekstrakcje, unie).' },
-  { key: 'durationMs', label: 'Czas obliczeń (ms)', explanation: 'Czas czystego wykonania algorytmu. Animacja go nie wydłuża.' },
-  { key: 'timingNote', label: 'Uwaga o czasie', explanation: 'Przy bardzo krótkich pomiarach nie ogłaszamy zwycięzcy na podstawie jednego uruchomienia — występuje zmienność.' },
+  { key: 'animationSteps', label: 'Kroki wizualizacji', explanation: 'Liczba stanów zapisanych do prezentacji edukacyjnej — to nie to samo co „operacje benchmarku” w Eksperymentach.' },
+  { key: 'operations', label: 'Operacje silnika edukacyjnego', explanation: 'Licznik wewnętrznych operacji w wersji z krokami (np. ekstrakcje, unie) — nie mylić z operacjami w Web Workerze.' },
+  { key: 'durationMs', label: 'Czas z przygotowaniem kroków (ms)', explanation: 'Czas wykonania wraz z budową listy kroków edukacyjnych. Nie obejmuje pauz odtwarzania; nie jest czystym czasem benchmarku.' },
+  { key: 'timingNote', label: 'Uwaga o czasie', explanation: 'Małe grafy edukacyjne ≠ pomiary z Eksperymentów. Przy czasach &lt;1 ms nie ogłaszamy zwycięzcy.' },
 ]

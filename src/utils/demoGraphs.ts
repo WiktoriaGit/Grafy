@@ -35,7 +35,7 @@ const edge = (source: string, target: string, weight: number, directed: boolean)
   labelBgBorderRadius: 5,
 })
 
-export type DemoGraphId = 'simple' | 'branched' | 'cycle' | 'disconnected' | 'weighted'
+export type DemoGraphId = 'simple' | 'branched' | 'cycle' | 'disconnected' | 'weighted' | 'negative' | 'mst'
 
 export type DemoGraphOption = {
   id: DemoGraphId
@@ -179,6 +179,56 @@ export const DEMO_GRAPHS: DemoGraphOption[] = [
           edge('D', 'E', 1, directed),
           edge('D', 'F', 2, directed),
           edge('E', 'F', 4, directed),
+        ],
+      }
+    },
+  },
+  {
+    id: 'negative',
+    label: 'Ujemna waga (Bellman–Ford)',
+    description: 'Skierowany graf z ujemną wagą, ale bez ujemnego cyklu — widać sensowną relaksację.',
+    start: 'A',
+    end: 'C',
+    build: () => {
+      const directed = true
+      return {
+        directed,
+        nodes: [node('A', 80, 160), node('B', 320, 60), node('C', 560, 160), node('D', 320, 280)],
+        edges: [
+          edge('A', 'B', 4, directed),
+          edge('A', 'C', 8, directed),
+          edge('B', 'C', -3, directed),
+          edge('A', 'D', 2, directed),
+          edge('D', 'C', 3, directed),
+        ],
+      }
+    },
+  },
+  {
+    id: 'mst',
+    label: 'MST (Prim/Kruskal)',
+    description: 'Nieskierowany graf ważony — porównaj wybór krawędzi Prima i Kruskala.',
+    start: 'A',
+    end: 'D',
+    build: () => {
+      const directed = false
+      return {
+        directed,
+        nodes: [
+          node('A', 120, 80),
+          node('B', 360, 40),
+          node('C', 360, 220),
+          node('D', 600, 80),
+          node('E', 240, 280),
+        ],
+        edges: [
+          edge('A', 'B', 1, directed),
+          edge('A', 'C', 4, directed),
+          edge('B', 'C', 2, directed),
+          edge('B', 'D', 5, directed),
+          edge('C', 'D', 3, directed),
+          edge('C', 'E', 2, directed),
+          edge('A', 'E', 6, directed),
         ],
       }
     },

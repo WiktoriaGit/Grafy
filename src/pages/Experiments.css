@@ -6,3 +6,5 @@
 .bench-progress{height:8px;border-radius:999px;background:#1a2740;overflow:hidden;margin-top:4px}
 .bench-progress-bar{height:100%;background:linear-gradient(90deg,#4f46e5,#818cf8);transition:width .25s ease}
 .heading-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+
+.bench-algo-block{display:flex;flex-direction:column;gap:4px;margin-bottom:6px}.bench-algo-hint{margin:0 0 0 25px;font-size:11px;line-height:1.55;color:#8fa1bb}

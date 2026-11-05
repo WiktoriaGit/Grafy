@@ -4,7 +4,8 @@ import { Background, BackgroundVariant, Controls, ReactFlow, type Edge, type Nod
 import { ArrowLeft, GitBranch, Play, Upload } from 'lucide-react'
 import { fromEditor, type Graph } from '../algorithms/graphAlgorithms'
 import { calculateMST, type MSTAlgorithm, type MSTEdge, type MSTResult } from '../algorithms/mstAlgorithms'
-import { sampleGraph } from '../utils/graphData'
+import { DEMO_GRAPHS } from '../utils/demoGraphs'
+import { ALGORITHM_GUIDES } from '../utils/demoScenarios'
 import AlgorithmPlayer from '../visualization/AlgorithmPlayer'
 import MstInsightPanel from '../visualization/MstInsightPanel'
 import { useStepPlayer } from '../visualization/useStepPlayer'
@@ -18,21 +19,25 @@ type Document = {
   directed: boolean
 }
 
-const sample = sampleGraph()
+const mstDemo = DEMO_GRAPHS.find(item => item.id === 'mst')!
+const mstBuilt = mstDemo.build()
 const example: Document = {
   directed: false,
-  nodes: sample.nodes.map(n => ({ id: n.id, position: n.position })),
-  edges: sample.edges.map(e => ({ source: e.source, target: e.target, weight: Number(e.label ?? 1) })),
+  nodes: mstBuilt.nodes.map(n => ({ id: n.id, position: n.position })),
+  edges: mstBuilt.edges.map(e => ({ source: e.source, target: e.target, weight: Number(e.label ?? 1) })),
 }
 
 export default function MST() {
   const [document, setDocument] = useState<Document>(example)
   const [algorithm, setAlgorithm] = useState<MSTAlgorithm>('prim')
-  const [start, setStart] = useState('A')
+  const [start, setStart] = useState(mstDemo.start)
   const [result, setResult] = useState<MSTResult | null>(null)
-  const [notice, setNotice] = useState('Przykładowy graf nieskierowany jest gotowy. Uruchom Prima lub Kruskala, aby zobaczyć szczegółową animację.')
+  const [notice, setNotice] = useState(
+    'Wczytano nieskierowany graf MST. Uruchom Prima lub Kruskala — albo otwórz Porównanie, by zobaczyć oba jednocześnie.',
+  )
   const player = useStepPlayer()
   const { bind, seek } = player
+  const guide = ALGORITHM_GUIDES[algorithm]
 
   const graph: Graph = useMemo(() => fromEditor(document), [document])
   const indexedEdges: MSTEdge[] = useMemo(
@@ -75,7 +80,7 @@ export default function MST() {
       const calculated = calculateMST(graph, algorithm, start)
       setResult(calculated)
       setNotice(
-        `Obliczenia: ${calculated.durationMs.toFixed(3)} ms (bez animacji), ${calculated.steps.length} kroków, ` +
+        `Obliczenia z przygotowaniem ${calculated.steps.length} kroków: ${calculated.durationMs.toFixed(3)} ms (bez pauz odtwarzania), ` +
           `waga ${calculated.totalWeight}, ${calculated.connected ? 'MST spójne' : 'las rozpinający'}.`,
       )
     } catch (error) {
@@ -158,6 +163,12 @@ export default function MST() {
                 <option value="kruskal">Kruskal</option>
               </select>
             </label>
+            <div className="algo-hints">
+              <strong>Zastosowanie</strong>
+              <p>{guide.use}</p>
+              <strong>Ograniczenia</strong>
+              <p>{guide.limits}</p>
+            </div>
             {algorithm === 'prim' && (
               <label>
                 Wierzchołek początkowy
@@ -256,7 +267,7 @@ export default function MST() {
           <strong>{result?.operations ?? '—'}</strong>
         </div>
         <div className="panel">
-          <small>Czas obliczeń (bez animacji)</small>
+          <small>Czas z przygotowaniem kroków</small>
           <strong>{result ? `${result.durationMs.toFixed(3)} ms` : '—'}</strong>
         </div>
         <div className="panel">
@@ -279,7 +290,8 @@ export default function MST() {
             {result.selected.map(e => `${e.source}–${e.target}(${e.weight})`).join(', ') || 'brak'}
           </p>
           <p className="algo-note">
-            Czas obliczeń mierzy wyłącznie `performance.now()` wokół algorytmu. Suwak i historia odtwarzają wcześniej zapisane stany
+            Czas obejmuje algorytm edukacyjny wraz z budową kroków wizualizacji (`performance.now`), bez pauz odtwarzania.
+            Nie porównuj go bezpośrednio z czasami z Eksperymentów. Suwak odtwarza wcześniej zapisane stany
             {finished ? ' — wyświetlany jest stan końcowy.' : '.'}
           </p>
         </section>

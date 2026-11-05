@@ -22,12 +22,18 @@ import {
 } from 'recharts'
 import {
   algorithmLabels,
+  BENCHMARK_TASK_HINTS,
   exportCSV,
   loadResults,
   saveResults,
   type AlgorithmId,
   type BenchResult,
 } from '../utils/benchmark'
+import {
+  COMPLEXITY_CATALOG,
+  COMPLEXITY_COMPARISON_NOTE,
+  COMPLEXITY_SYMBOLS,
+} from '../utils/complexityCatalog'
 import { topologyLabels } from '../utils/largeGraphs'
 import './Results.css'
 
@@ -129,6 +135,12 @@ export default function Results() {
 
   const average = filtered.length ? filtered.reduce((sum, r) => sum + r.mean, 0) / filtered.length : 0
   const distinctAlgorithms = new Set(filtered.map(r => r.algorithm)).size
+  const distinctVertexSizes = new Set(filtered.map(r => r.vertices)).size
+  const distinctEdgeSizes = new Set(filtered.map(r => r.edges)).size
+  const enoughPointsForTrend = distinctVertexSizes >= 3 || distinctEdgeSizes >= 3
+
+  const eduComplexity = COMPLEXITY_CATALOG.filter(item => item.context === 'educational')
+  const benchComplexity = COMPLEXITY_CATALOG.filter(item => item.context === 'benchmark')
 
   const removeAll = () => {
     if (!window.confirm('Usunąć wszystkie zapisane pomiary z przeglądarki?')) return
@@ -161,10 +173,110 @@ export default function Results() {
       <section className="panel results-edu">
         <div className="panel-header"><h3>Jak czytać wyniki?</h3></div>
         <div className="results-edu-body">
-          <p><b>Złożoność czasowa</b> opisuje, jak koszt algorytmu rośnie wraz z rozmiarem wejścia (V, E) w notacji asymptotycznej — to model teoretyczny, nie wynik z zegara.</p>
-          <p><b>Czas zmierzony</b> (`performance.now`) obejmuje realną implementację w JS, JIT, cache i obciążenie systemu. Dlatego ten sam algorytm może dać różne czasy między uruchomieniami.</p>
-          <p><b>Małe czasy</b> (&lt;1 ms) są szczególnie niestabilne — nie ogłaszaj zwycięzcy na podstawie jednego krótkiego pomiaru; zwiększ V/E lub liczbę powtórzeń.</p>
-          <p><b>Czas generowania grafu</b> jest zapisywany osobno i nie jest wliczany do średniej/mediany algorytmu. Wykresy poniżej używają wyłącznie rzeczywistych pomiarów z historii.</p>
+          <p><b>Złożoność czasowa (Big O)</b> opisuje tempo wzrostu kosztu względem V i E — to model teoretyczny, nie dokładny czas w milisekundach.</p>
+          <p><b>Czas zmierzony</b> (`performance.now`) obejmuje lean-implementację w JS (JIT, cache, obciążenie CPU). Nie obejmuje animacji ani generowania grafu.</p>
+          <p><b>Odchylenie standardowe σ</b> liczymy jako pierwiastek ze średniej kwadratów odchyleń od średniej (wariancja populacyjna: dzielnik = liczba powtórzeń w serii, nie n−1).</p>
+          <p><b>Operacje benchmarku</b> to licznik w Web Workerze. <b>Kroki wizualizacji</b> to stany animacji w module Algorytmy/MST — to inne metryki.</p>
+          <p>{COMPLEXITY_COMPARISON_NOTE}</p>
+        </div>
+      </section>
+
+      <section className="panel results-complexity">
+        <div className="panel-header"><h3>Złożoność obliczeniowa algorytmów</h3></div>
+        <div className="results-edu-body">
+          <p>
+            Poniższe wzory wynikają z <b>faktycznego kodu</b> GraphLab, nie z „nazwy podręcznikowej”.
+            Symbole: {COMPLEXITY_SYMBOLS.V}; {COMPLEXITY_SYMBOLS.E}; {COMPLEXITY_SYMBOLS.alpha}.
+          </p>
+          <p className="results-callout">
+            Dijkstra w wizualizacji skanuje wierzchołki (O(V² + E)). Dijkstra w benchmarku używa kopca binarnego (O((V+E) log V)).
+          </p>
+        </div>
+        <div className="results-complexity-grid">
+          <div>
+            <h4>Wersje edukacyjne (wizualizacja / porównanie / MST)</h4>
+            <div className="table-scroll">
+              <table className="data-table results-complexity-table">
+                <thead>
+                  <tr>
+                    <th>Algorytm</th>
+                    <th>Czas</th>
+                    <th>Pamięć</th>
+                    <th>Struktury</th>
+                    <th>Uwagi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eduComplexity.map(row => (
+                    <tr key={row.id}>
+                      <td>{row.name}</td>
+                      <td><code>{row.time}</code></td>
+                      <td><code>{row.memory}</code></td>
+                      <td>{row.structures}</td>
+                      <td>{row.notes}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h4>Wersje pomiarowe (Eksperymenty)</h4>
+            <div className="table-scroll">
+              <table className="data-table results-complexity-table">
+                <thead>
+                  <tr>
+                    <th>Algorytm</th>
+                    <th>Czas</th>
+                    <th>Pamięć</th>
+                    <th>Zadanie</th>
+                    <th>Uwagi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {benchComplexity.map(row => (
+                    <tr key={row.id}>
+                      <td>{row.name}</td>
+                      <td><code>{row.time}</code></td>
+                      <td><code>{row.memory}</code></td>
+                      <td>{BENCHMARK_TASK_HINTS[row.id.replace('-bench', '') as AlgorithmId] ?? row.structures}</td>
+                      <td>{row.notes}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel results-edu">
+        <div className="panel-header"><h3>Złożoność teoretyczna a wyniki pomiarów</h3></div>
+        <div className="results-edu-body">
+          <p>
+            Wykresy poniżej pokazują <b>wyłącznie rzeczywiste pomiary</b> z historii (bez fikcyjnych danych).
+            Obok nich warto mieć w pamięci wzory wersji pomiarowych:
+            BFS/DFS → <code>O(V+E)</code>; Dijkstra (kopiec) → <code>O((V+E) log V)</code>; Bellman–Ford → <code>O(V·E)</code>.
+          </p>
+          <p>
+            <b>Wpływ V:</b> przy podobnej gęstości wzrost liczby wierzchołków zwykle wydłuża czas — szczególnie w Bellmanie–Fordzie (czynnik V×E).
+            <b>Wpływ E:</b> więcej krawędzi oznacza więcej relaksacji / przeglądów list sąsiedztwa.
+          </p>
+          <p>
+            Big O nie przewiduje konkretnej liczby milisekund. Na kształt krzywej wpływają topologia, JIT i obciążenie przeglądarki.
+            Nie rysujemy tu sztucznej krzywej „udającej” pomiar — unika to mylenia modelu z danymi.
+          </p>
+          {!enoughPointsForTrend ? (
+            <p className="results-callout">
+              Za mało zróżnicowanych punktów V/E w odfiltrowanej historii ({distinctVertexSizes} rozmiarów V, {distinctEdgeSizes} rozmiarów E),
+              aby wyciągać wniosek o empirycznym potwierdzeniu złożoności. Uruchom serie dla kilku wartości V (np. 100, 1000, 10 000).
+            </p>
+          ) : (
+            <p>
+              Masz co najmniej kilka rozmiarów wejścia — możesz jakościowo porównać tempo wzrostu na wykresach z oczekiwanym porządkiem
+              (np. Bellman–Ford zwykle rośnie szybciej niż BFS przy rosnącym V·E), pamiętając o szumie pomiarowym.
+            </p>
+          )}
         </div>
       </section>
 
@@ -212,10 +324,15 @@ export default function Results() {
         {chartMeansByAlgorithm.length ? (
           <div className="results-chart">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartMeansByAlgorithm} margin={{ top: 15, right: 25, left: 10, bottom: 12 }}>
+              <BarChart data={chartMeansByAlgorithm} margin={{ top: 15, right: 25, left: 18, bottom: 12 }}>
                 <CartesianGrid stroke="#29364a" strokeDasharray="3 5" />
                 <XAxis dataKey="algorithm" stroke="#94a3b8" tick={{ fontSize: 12 }} />
-                <YAxis stroke="#94a3b8" tick={{ fontSize: 12 }} tickFormatter={n => Number(n).toFixed(2)} />
+                <YAxis
+                  stroke="#94a3b8"
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={n => Number(n).toFixed(2)}
+                  label={{ value: 'Czas [ms]', angle: -90, position: 'insideLeft', fill: '#94a3b8', offset: 4 }}
+                />
                 <Tooltip
                   contentStyle={{ background: '#172033', border: '1px solid #334155', borderRadius: 10, color: '#fff' }}
                   formatter={(value) => [typeof value === 'number' ? `${format(value)} ms` : value, 'Średnia']}
@@ -237,7 +354,7 @@ export default function Results() {
         {chartByVertices.length ? (
           <div className="results-chart">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartByVertices} margin={{ top: 15, right: 25, left: 10, bottom: 12 }}>
+              <LineChart data={chartByVertices} margin={{ top: 15, right: 25, left: 18, bottom: 18 }}>
                 <CartesianGrid stroke="#29364a" strokeDasharray="3 5" />
                 <XAxis
                   dataKey="vertices"
@@ -245,7 +362,12 @@ export default function Results() {
                   tick={{ fontSize: 12 }}
                   label={{ value: 'Liczba wierzchołków (V)', position: 'insideBottom', offset: -6, fill: '#94a3b8' }}
                 />
-                <YAxis stroke="#94a3b8" tick={{ fontSize: 12 }} tickFormatter={n => Number(n).toFixed(2)} />
+                <YAxis
+                  stroke="#94a3b8"
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={n => Number(n).toFixed(2)}
+                  label={{ value: 'Czas [ms]', angle: -90, position: 'insideLeft', fill: '#94a3b8', offset: 4 }}
+                />
                 <Tooltip
                   contentStyle={{ background: '#172033', border: '1px solid #334155', borderRadius: 10, color: '#fff' }}
                   formatter={(value, name) => [typeof value === 'number' ? `${format(value)} ms` : value, String(name)]}
@@ -284,7 +406,7 @@ export default function Results() {
         {chartByEdges.length ? (
           <div className="results-chart">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartByEdges} margin={{ top: 15, right: 25, left: 10, bottom: 12 }}>
+              <LineChart data={chartByEdges} margin={{ top: 15, right: 25, left: 18, bottom: 18 }}>
                 <CartesianGrid stroke="#29364a" strokeDasharray="3 5" />
                 <XAxis
                   dataKey="edges"
@@ -292,7 +414,12 @@ export default function Results() {
                   tick={{ fontSize: 12 }}
                   label={{ value: 'Liczba krawędzi (E)', position: 'insideBottom', offset: -6, fill: '#94a3b8' }}
                 />
-                <YAxis stroke="#94a3b8" tick={{ fontSize: 12 }} tickFormatter={n => Number(n).toFixed(2)} />
+                <YAxis
+                  stroke="#94a3b8"
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={n => Number(n).toFixed(2)}
+                  label={{ value: 'Czas [ms]', angle: -90, position: 'insideLeft', fill: '#94a3b8', offset: 4 }}
+                />
                 <Tooltip
                   contentStyle={{ background: '#172033', border: '1px solid #334155', borderRadius: 10, color: '#fff' }}
                   formatter={(value, name) => [typeof value === 'number' ? `${format(value)} ms` : value, String(name)]}

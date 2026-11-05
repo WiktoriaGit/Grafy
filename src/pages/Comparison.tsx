@@ -27,6 +27,7 @@ import {
   type SavedGraph,
 } from '../comparison/flowBoard'
 import { DEMO_GRAPHS, type DemoGraphId } from '../utils/demoGraphs'
+import { ALGORITHM_GUIDES } from '../utils/demoScenarios'
 import { sampleGraph } from '../utils/graphData'
 import AlgorithmPlayer from '../visualization/AlgorithmPlayer'
 import { useStepPlayer } from '../visualization/useStepPlayer'
@@ -101,16 +102,54 @@ function snapshotWorkspaceRaw(): string | null {
   }
 }
 
+function bootFromScenario(scenario: string | null): {
+  document: SavedGraph
+  start: string
+  end: string
+  notice: string
+  demoId: DemoGraphId | 'custom'
+  leftAlgo: ComparisonAlgoId
+  rightAlgo: ComparisonAlgoId
+} | null {
+  if (scenario === 'bfs-dfs') {
+    const demo = DEMO_GRAPHS.find(item => item.id === 'branched')!
+    return {
+      demoId: 'branched',
+      document: toSaved(demo.build()),
+      start: demo.start,
+      end: demo.end,
+      leftAlgo: 'bfs',
+      rightAlgo: 'dfs',
+      notice: 'Scenariusz A: BFS vs DFS na tym samym grafie rozgałęzionym. Kliknij „Porównaj algorytmy” i obserwuj kolejność odwiedzin.',
+    }
+  }
+  if (scenario === 'mst') {
+    const demo = DEMO_GRAPHS.find(item => item.id === 'mst')!
+    return {
+      demoId: 'mst',
+      document: toSaved(demo.build()),
+      start: demo.start,
+      end: demo.end,
+      leftAlgo: 'prim',
+      rightAlgo: 'kruskal',
+      notice: 'Scenariusz D: Prim vs Kruskal na tym samym grafie nieskierowanym. Porównaj kolejność wyboru krawędzi i łączną wagę MST.',
+    }
+  }
+  return null
+}
+
 export default function Comparison() {
   const location = useLocation()
+  const scenario = new URLSearchParams(location.search).get('scenario')
   const openedFromEditor = Boolean((location.state as { fromEditor?: boolean } | null)?.fromEditor)
     || Boolean(loadWorkspaceMeta()?.openInComparison)
+  const scenarioBoot = !openedFromEditor ? bootFromScenario(scenario) : null
   const boot = openedFromEditor ? bootFromEditor() : null
-  const initial = boot ?? defaultDocument()
+  const initial = boot ?? scenarioBoot ?? defaultDocument()
 
   const [document, setDocument] = useState<SavedGraph>(initial.document)
-  const [leftAlgo, setLeftAlgo] = useState<ComparisonAlgoId>('bfs')
-  const [rightAlgo, setRightAlgo] = useState<ComparisonAlgoId>('dfs')
+  const [leftAlgo, setLeftAlgo] = useState<ComparisonAlgoId>(scenarioBoot?.leftAlgo ?? 'bfs')
+  const [rightAlgo, setRightAlgo] = useState<ComparisonAlgoId>(scenarioBoot?.rightAlgo ?? 'dfs')
   const [start, setStart] = useState(initial.start)
   const [end, setEnd] = useState(initial.end)
   const [demoId, setDemoId] = useState<DemoGraphId | 'custom'>(initial.demoId)
@@ -214,8 +253,8 @@ export default function Comparison() {
       const result = runComparison(graph, leftAlgo, rightAlgo, start, end)
       setComparison(result)
       setNotice(
-        `Porównanie gotowe. Lewa strona: ${COMPARISON_ALGO_NAMES[leftAlgo]} (${result.left.metrics.durationMs.toFixed(3)} ms), ` +
-          `prawa: ${COMPARISON_ALGO_NAMES[rightAlgo]} (${result.right.metrics.durationMs.toFixed(3)} ms) — bez czasu animacji.`,
+        `Porównanie gotowe. Lewa: ${COMPARISON_ALGO_NAMES[leftAlgo]} (${result.left.metrics.durationMs.toFixed(3)} ms z przygotowaniem kroków), ` +
+          `prawa: ${COMPARISON_ALGO_NAMES[rightAlgo]} (${result.right.metrics.durationMs.toFixed(3)} ms). Pauzy odtwarzania nie wchodzą w pomiar — to nadal nie jest benchmark z Eksperymentów.`,
       )
       if (snapshotWorkspaceRaw() !== before) {
         throw new Error('Porównanie zmodyfikowało dane edytora — operacja przerwana.')
@@ -274,6 +313,12 @@ export default function Comparison() {
               {ALGO_OPTIONS.map(id => <option key={id} value={id}>{COMPARISON_ALGO_NAMES[id]}</option>)}
             </select>
           </label>
+          <div className="algo-hints" style={{ gridColumn: '1 / -1' }}>
+            <strong>{COMPARISON_ALGO_NAMES[leftAlgo]} — zastosowanie</strong>
+            <p>{ALGORITHM_GUIDES[leftAlgo].use} {ALGORITHM_GUIDES[leftAlgo].limits}</p>
+            <strong>{COMPARISON_ALGO_NAMES[rightAlgo]} — zastosowanie</strong>
+            <p>{ALGORITHM_GUIDES[rightAlgo].use} {ALGORITHM_GUIDES[rightAlgo].limits}</p>
+          </div>
           <label>
             Przykładowy graf
             <select
@@ -452,7 +497,7 @@ export default function Comparison() {
                 <td>{comparison?.right.metrics.operations ?? '—'}</td>
               </tr>
               <tr>
-                <td>Czas obliczeń (ms)</td>
+                <td>Czas z przygotowaniem kroków (ms)</td>
                 <td>{comparison ? comparison.left.metrics.durationMs.toFixed(3) : '—'}</td>
                 <td>{comparison ? comparison.right.metrics.durationMs.toFixed(3) : '—'}</td>
               </tr>
