@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { runAlgorithm } from '../algorithms/graphAlgorithms'
 import { calculateMST } from '../algorithms/mstAlgorithms'
-import { calloutsFromMstStep, calloutsFromStep } from './graphCallouts'
+import {
+  calloutFromMstStep,
+  calloutFromStep,
+  calloutsFromStep,
+} from './graphCallouts'
 
 const weighted = {
   directed: true,
@@ -15,42 +19,46 @@ const weighted = {
   ],
 }
 
-describe('Kontekstowe okienka na grafie', () => {
-  it('Dijkstra: relaksacja daje jedno niesparowane okienko (bez duplikatu odległości)', () => {
+describe('Jedna aktywna tabliczka na krok', () => {
+  it('Dijkstra: każdy krok ma co najwyżej jedno okienko i zmienia kotwicę', () => {
     const run = runAlgorithm(weighted, 'dijkstra', 'A', 'D')
-    const relax = run.steps.find(step => step.event === 'relax' && step.distanceUpdates?.length)
-    expect(relax).toBeTruthy()
-    const relaxCallouts = calloutsFromStep(relax)
-    expect(relaxCallouts.length).toBe(1)
-    expect(relaxCallouts[0].kind).toBe('update')
-    expect(relaxCallouts[0].body).toMatch(/→/)
+    for (let i = 0; i < run.steps.length; i++) {
+      const list = calloutsFromStep(run.steps[i], i)
+      expect(list.length).toBeLessThanOrEqual(1)
+    }
 
-    const select = run.steps.find(step => step.event === 'select' || step.event === 'extract')
-      ?? run.steps.find(step => step.current != null)
-    expect(select).toBeTruthy()
-    const selectCallouts = calloutsFromStep(select)
-    expect(selectCallouts.length).toBe(1)
-    expect(selectCallouts[0].anchor.type).toBe('node')
+    const relaxIdx = run.steps.findIndex(s => s.event === 'relax' && s.distanceUpdates?.length)
+    expect(relaxIdx).toBeGreaterThanOrEqual(0)
+    const relax = calloutFromStep(run.steps[relaxIdx], relaxIdx)!
+    expect(relax.anchor.type).toBe('node')
+    if (relax.anchor.type === 'node') {
+      expect(relax.anchor.id).toBe(run.steps[relaxIdx].distanceUpdates![0].vertex)
+    }
+
+    const selectIdx = run.steps.findIndex(s => s.event === 'select')
+    const select = calloutFromStep(run.steps[selectIdx], selectIdx)!
+    expect(select.anchor.type).toBe('node')
+
+    // Zmiana kroku → inny id (poprzednia tabliczka nie pozostaje w stanie).
+    expect(relax.id).not.toBe(select.id)
   })
 
-  it('BFS: odkrycie sąsiada i kolejka', () => {
+  it('BFS: odkrycie sąsiada — jedno okienko przy nowym wierzchołku', () => {
     const run = runAlgorithm(weighted, 'bfs', 'A', 'D')
-    const discover = run.steps.find(step => step.event === 'discover')
-    expect(discover).toBeTruthy()
-    const callouts = calloutsFromStep(discover)
-    expect(callouts[0]?.body.length).toBeGreaterThan(0)
-    expect(callouts.every(c => c.headline && c.body)).toBe(true)
+    const discoverIdx = run.steps.findIndex(s => s.event === 'discover')
+    const callouts = calloutsFromStep(run.steps[discoverIdx], discoverIdx)
+    expect(callouts).toHaveLength(1)
+    expect(callouts[0].anchor.type).toBe('node')
   })
 
-  it('DFS: wejście do wierzchołka', () => {
+  it('DFS: wejście do wierzchołka kotwiczy się w aktualnym wierzchołku', () => {
     const run = runAlgorithm(weighted, 'dfs', 'A', 'D')
-    const visit = run.steps.find(step => step.event === 'visit' || step.event === 'extract')
-    expect(visit).toBeTruthy()
-    const callouts = calloutsFromStep(visit)
-    expect(callouts.some(c => c.anchor.type === 'node')).toBe(true)
+    const visitIdx = run.steps.findIndex(s => s.event === 'visit' || s.event === 'extract')
+    const callout = calloutFromStep(run.steps[visitIdx], visitIdx)!
+    expect(callout.anchor.type).toBe('node')
   })
 
-  it('Bellman–Ford: ujemne wagi dają komunikaty relaksacji', () => {
+  it('Bellman–Ford: relaksacja przy ujemnej wadze — jedno okienko', () => {
     const run = runAlgorithm({
       directed: true,
       vertices: ['A', 'B', 'C'],
@@ -60,14 +68,11 @@ describe('Kontekstowe okienka na grafie', () => {
         { source: 'B', target: 'C', weight: -3 },
       ],
     }, 'bellman', 'A', 'C')
-    const relax = run.steps.find(step => step.event === 'relax')
-    expect(relax).toBeTruthy()
-    const callouts = calloutsFromStep(relax)
-    expect(callouts.length).toBeGreaterThan(0)
-    expect(callouts.some(c => /odległ/i.test(c.body) || /relaks/i.test(c.headline + c.body) || c.kind === 'update')).toBe(true)
+    const relaxIdx = run.steps.findIndex(s => s.event === 'relax')
+    expect(calloutsFromStep(run.steps[relaxIdx], relaxIdx)).toHaveLength(1)
   })
 
-  it('Prim/Kruskal: wybór i odrzucenie krawędzi', () => {
+  it('Prim/Kruskal: akceptacja krawędzi kotwiczy się na krawędzi', () => {
     const graph = {
       directed: false,
       vertices: ['A', 'B', 'C'],
@@ -78,21 +83,28 @@ describe('Kontekstowe okienka na grafie', () => {
       ],
     }
     const prim = calculateMST(graph, 'prim', 'A')
-    const accept = prim.steps.find(step => step.event === 'accept')
-    expect(calloutsFromMstStep(accept).some(c => c.kind === 'update' || c.anchor.type === 'edge')).toBe(true)
+    const acceptIdx = prim.steps.findIndex(s => s.event === 'accept')
+    const accept = calloutFromMstStep(prim.steps[acceptIdx], acceptIdx)!
+    expect(accept.anchor.type).toBe('edge')
 
     const kruskal = calculateMST(graph, 'kruskal')
-    const reject = kruskal.steps.find(step => step.event === 'reject')
-    if (reject) {
-      expect(calloutsFromMstStep(reject).some(c => c.kind === 'skip')).toBe(true)
+    const rejectIdx = kruskal.steps.findIndex(s => s.event === 'reject')
+    if (rejectIdx >= 0) {
+      expect(calloutFromMstStep(kruskal.steps[rejectIdx], rejectIdx)!.anchor.type).toBe('edge')
     }
-    expect(calloutsFromMstStep(kruskal.steps.find(s => s.event === 'accept')).length).toBeGreaterThan(0)
   })
 
-  it('poprzedni/następny krok zmienia zestaw okienek', () => {
+  it('done / init bez aktualnego wierzchołka → kotwica canvas', () => {
     const run = runAlgorithm(weighted, 'dijkstra', 'A', 'D')
-    const a = calloutsFromStep(run.steps[0])
-    const b = calloutsFromStep(run.steps[Math.min(3, run.steps.length - 1)])
-    expect(a[0]?.id).not.toBe(b[0]?.id)
+    const doneIdx = run.steps.findIndex(s => s.event === 'done')
+    const done = calloutFromStep(run.steps[doneIdx], doneIdx)!
+    expect(done.anchor.type).toBe('canvas')
+  })
+
+  it('poprzedni/następny krok zmienia identyfikator tabliczki', () => {
+    const run = runAlgorithm(weighted, 'dijkstra', 'A', 'D')
+    const a = calloutFromStep(run.steps[0], 0)!
+    const b = calloutFromStep(run.steps[Math.min(3, run.steps.length - 1)], 3)!
+    expect(a.id).not.toBe(b.id)
   })
 })

@@ -181,7 +181,10 @@ export default function Algorithms() {
 
   const graph: Graph = useMemo(() => fromEditor(document), [document])
   const step = run?.steps[player.index]
-  const graphCallouts = useMemo(() => calloutsFromStep(step), [step])
+  const graphCallouts = useMemo(
+    () => calloutsFromStep(step, player.index),
+    [step, player.index],
+  )
   const showDistances = algorithm === 'dijkstra' || algorithm === 'bellman'
   const structureKind = run?.structureKind
     ?? (algorithm === 'bfs' ? 'queue' : algorithm === 'dfs' ? 'stack' : algorithm === 'dijkstra' ? 'priority' : 'none')

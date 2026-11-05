@@ -9,6 +9,7 @@ import type { GraphCallout } from './graphCallouts'
 import './GraphCalloutsOverlay.css'
 
 type Props = {
+  /** Active callouts for the CURRENT step only (do not accumulate history). */
   callouts: GraphCallout[]
   enabled?: boolean
 }
@@ -37,40 +38,26 @@ function nodeCenterSelector(id: string) {
   }
 }
 
-function anchorPoint(
-  callout: GraphCallout,
-  centers: Map<string, Point | null>,
-): Point | null {
-  if (callout.anchor.type === 'node') {
-    return centers.get(callout.anchor.id) ?? null
+function canvasAnchorSelector(state: ReactFlowState): Point {
+  const nodes = [...state.nodeLookup.values()]
+  if (!nodes.length) return { x: 200, y: 80 }
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const node of nodes) {
+    const width = node.measured?.width ?? (typeof node.width === 'number' ? node.width : 56)
+    const height = node.measured?.height ?? (typeof node.height === 'number' ? node.height : 56)
+    const abs = node.internals?.positionAbsolute ?? node.position
+    minX = Math.min(minX, abs.x)
+    minY = Math.min(minY, abs.y)
+    maxX = Math.max(maxX, abs.x + width)
+    maxY = Math.max(maxY, abs.y + height)
   }
-  const source = centers.get(callout.anchor.source)
-  const target = centers.get(callout.anchor.target)
-  if (!source || !target) return null
-  return { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 }
-}
-
-/** Nudge a second bubble so it does not sit on top of the first. */
-function separatePoints(a: Point, b: Point): [Point, Point] {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const dist = Math.hypot(dx, dy)
-  const minGap = 130
-  if (dist >= minGap) return [a, b]
-
-  // Prefer vertical stack when anchors are close / identical.
-  if (dist < 8) {
-    return [
-      { x: a.x - 20, y: a.y - 18 },
-      { x: b.x + 20, y: b.y + 72 },
-    ]
+  return {
+    x: (minX + maxX) / 2,
+    y: minY - 8,
   }
-
-  const scale = (minGap - dist) / (2 * dist)
-  return [
-    { x: a.x - dx * scale, y: a.y - dy * scale },
-    { x: b.x + dx * scale, y: b.y + dy * scale },
-  ]
 }
 
 function CalloutBubble({
@@ -85,7 +72,7 @@ function CalloutBubble({
   placeBelow: boolean
 }) {
   const translate = placeBelow
-    ? `translate(-50%, 14%) translate(${x}px, ${y}px)`
+    ? `translate(-50%, 16%) translate(${x}px, ${y}px)`
     : `translate(-50%, -112%) translate(${x}px, ${y}px)`
 
   return (
@@ -106,73 +93,45 @@ function CalloutBubble({
   )
 }
 
-function CalloutsLaidOut({ callouts }: { callouts: GraphCallout[] }) {
-  const nodeIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const c of callouts) {
-      if (c.anchor.type === 'node') ids.add(c.anchor.id)
-      else {
-        ids.add(c.anchor.source)
-        ids.add(c.anchor.target)
-      }
-    }
-    return [...ids]
-  }, [callouts])
-
-  const centers = useStore(state => {
-    const map = new Map<string, Point | null>()
-    for (const id of nodeIds) map.set(id, nodeCenterSelector(id)(state))
-    return map
+function ActiveCallout({ callout }: { callout: GraphCallout }) {
+  const point = useStore((state: ReactFlowState) => {
+    if (callout.anchor.type === 'canvas') return canvasAnchorSelector(state)
+    if (callout.anchor.type === 'node') return nodeCenterSelector(callout.anchor.id)(state)
+    const source = nodeCenterSelector(callout.anchor.source)(state)
+    const target = nodeCenterSelector(callout.anchor.target)(state)
+    if (!source || !target) return null
+    return { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 }
   })
 
-  const laidOut = useMemo(() => {
-    const withPoints = callouts
-      .map(callout => ({ callout, point: anchorPoint(callout, centers) }))
-      .filter((item): item is { callout: GraphCallout; point: Point } => item.point != null)
-
-    if (withPoints.length <= 1) {
-      return withPoints.map((item, index) => ({
-        ...item,
-        placeBelow: item.point.y < 70 || index === 1,
-      }))
-    }
-
-    const [p0, p1] = separatePoints(withPoints[0].point, withPoints[1].point)
-    return [
-      { callout: withPoints[0].callout, point: p0, placeBelow: p0.y < 70 },
-      { callout: withPoints[1].callout, point: p1, placeBelow: true },
-    ]
-  }, [callouts, centers])
-
+  if (!point) return null
+  const placeBelow = callout.anchor.type === 'canvas' ? false : point.y < 64
   return (
-    <>
-      {laidOut.map(({ callout, point, placeBelow }) => (
-        <CalloutBubble
-          key={callout.id}
-          callout={callout}
-          x={point.x}
-          y={point.y}
-          placeBelow={placeBelow}
-        />
-      ))}
-    </>
+    <CalloutBubble
+      callout={callout}
+      x={point.x}
+      y={point.y}
+      placeBelow={placeBelow}
+    />
   )
 }
 
 /**
- * Educational callouts anchored to nodes/edges inside React Flow.
- * Deduped upstream; here we only separate close positions.
+ * Renders only the active callout(s) for the current step.
+ * Keyed by callout.id so the previous bubble unmounts when the step changes.
  */
 export default function GraphCalloutsOverlay({ callouts, enabled = true }: Props) {
   const { zoom } = useViewport()
-  const visible = enabled && zoom >= 0.45
-  const limited = useMemo(() => callouts.slice(0, 2), [callouts])
+  // Default: one primary callout. A second is allowed only if the producer sent two distinct ones.
+  const active = useMemo(() => callouts.slice(0, 1), [callouts])
+  const visible = enabled && zoom >= 0.45 && active.length > 0
 
-  if (!visible || limited.length === 0) return null
+  if (!visible) return null
 
   return (
     <EdgeLabelRenderer>
-      <CalloutsLaidOut callouts={limited} />
+      {active.map(callout => (
+        <ActiveCallout key={callout.id} callout={callout} />
+      ))}
     </EdgeLabelRenderer>
   )
 }

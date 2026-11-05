@@ -48,7 +48,10 @@ export default function MST() {
     [graph],
   )
   const step = result?.steps[player.index]
-  const graphCallouts = useMemo(() => calloutsFromMstStep(step), [step])
+  const graphCallouts = useMemo(
+    () => calloutsFromMstStep(step, player.index),
+    [step, player.index],
+  )
   const finished = !!result && player.isLast
 
   useEffect(() => {

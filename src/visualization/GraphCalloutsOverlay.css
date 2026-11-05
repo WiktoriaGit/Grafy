@@ -45,8 +45,8 @@
 .graph-callout-info{border-color:#64748b}
 
 @keyframes graph-callout-in{
-  from{opacity:0;transform:translateY(4px) scale(.98)}
-  to{opacity:1;transform:translateY(0) scale(1)}
+  from{opacity:0}
+  to{opacity:1}
 }
 
 @media (prefers-reduced-motion: reduce){

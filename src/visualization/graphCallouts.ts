@@ -7,14 +7,18 @@ import type { MSTStep, MSTStepEvent } from '../algorithms/mstAlgorithms'
 
 export type CalloutKind = 'analyze' | 'update' | 'skip' | 'done' | 'info'
 
+export type CalloutAnchor =
+  | { type: 'node'; id: string }
+  | { type: 'edge'; source: string; target: string }
+  | { type: 'canvas' }
+
 export type GraphCallout = {
+  /** Stable id for this step's active callout (includes step fingerprint). */
   id: string
   kind: CalloutKind
-  anchor: { type: 'node'; id: string } | { type: 'edge'; source: string; target: string }
+  anchor: CalloutAnchor
   headline: string
   body: string
-  /** Optional layout hint when two callouts are shown (0 = primary, 1 = secondary). */
-  slot?: 0 | 1
 }
 
 function parseActiveEdge(activeEdge?: string): { source: string; target: string } | null {
@@ -40,172 +44,189 @@ function kindFromMstEvent(event: MSTStepEvent): CalloutKind {
   return 'info'
 }
 
-function sameAnchor(a: GraphCallout['anchor'], b: GraphCallout['anchor']): boolean {
-  if (a.type !== b.type) {
-    // Edge A→B and node B (target) are treated as overlapping focus.
-    if (a.type === 'edge' && b.type === 'node') return b.id === a.source || b.id === a.target
-    if (b.type === 'edge' && a.type === 'node') return a.id === b.source || a.id === b.target
-    return false
-  }
-  if (a.type === 'node' && b.type === 'node') return a.id === b.id
-  if (a.type === 'edge' && b.type === 'edge') {
-    return a.source === b.source && a.target === b.target
-  }
-  return false
+function fingerprint(parts: Array<string | number | null | undefined>): string {
+  return parts.map(p => (p == null ? '' : String(p))).join('|')
 }
 
-function textTooSimilar(a: GraphCallout, b: GraphCallout): boolean {
-  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
-  const ha = normalize(a.headline)
-  const hb = normalize(b.headline)
-  const ba = normalize(a.body)
-  const bb = normalize(b.body)
-  if (ha === hb) return true
-  if (ba.includes(bb) || bb.includes(ba)) return true
-  // Same distance update mentioned twice (∞ → 4 etc.)
-  const dist = /∞\s*→\s*[\d.]+|[\d.]+\s*→\s*[\d.]+/
-  const ma = ba.match(dist)?.[0]
-  const mb = bb.match(dist)?.[0]
-  if (ma && mb && ma === mb) return true
-  return false
-}
-
-function finalize(list: GraphCallout[]): GraphCallout[] {
-  const unique: GraphCallout[] = []
-  for (const item of list) {
-    if (unique.some(existing => sameAnchor(existing.anchor, item.anchor) || textTooSimilar(existing, item))) {
-      continue
-    }
-    unique.push(item)
-    if (unique.length >= 2) break
-  }
-  return unique.map((item, index) => ({ ...item, slot: index as 0 | 1 }))
+function shortBody(message: string, reason?: string, max = 180): string {
+  const text = `${message}${reason ? ` ${reason}` : ''}`.replace(/\s+/g, ' ').trim()
+  if (text.length <= max) return text
+  return `${text.slice(0, max - 1)}…`
 }
 
 /**
- * Builds 1–2 non-duplicated graph callouts from an educational step.
- * Prefer a single focused bubble; a second one only when the focus truly differs.
+ * Exactly one active callout for a path/search/shortest-path step.
+ * Anchoring rules follow the operation type (edge vs vertex vs canvas).
  */
-export function calloutsFromStep(step: Step | undefined | null): GraphCallout[] {
-  if (!step) return []
+export function calloutFromStep(
+  step: Step | undefined | null,
+  stepIndex = 0,
+): GraphCallout | null {
+  if (!step) return null
+
   const edge = parseActiveEdge(step.activeEdge)
   const kind = kindFromSearchEvent(step.event)
-  const why = step.reason ? ` ${step.reason}` : ''
   const update = step.distanceUpdates?.[0]
-  const candidates: GraphCallout[] = []
+  const why = step.reason
 
-  // Edge-focused steps: one bubble on the edge, with distance change folded in (no second copy on the vertex).
-  if (edge && (step.event === 'examine' || step.event === 'relax' || step.event === 'skip' || step.event === 'discover')) {
-    let body = step.message
-    if (update && (step.event === 'relax' || step.event === 'discover')) {
-      body = `${step.message} Odległość ${update.vertex}: ${formatDistance(update.previous)} → ${formatDistance(update.next)}.`
-    }
-    candidates.push({
-      id: `edge-${edge.source}-${edge.target}-${step.event}`,
+  // 1) Edge inspection / skip — always on the edge.
+  if (edge && (step.event === 'examine' || step.event === 'skip')) {
+    return {
+      id: fingerprint(['path', stepIndex, step.event, 'edge', edge.source, edge.target]),
       kind,
       anchor: { type: 'edge', source: edge.source, target: edge.target },
       headline: step.title,
-      body: `${body}${why}`.trim(),
-    })
-  } else if (update && (step.event === 'relax' || step.event === 'discover')) {
-    candidates.push({
-      id: `node-update-${update.vertex}`,
+      body: shortBody(step.message, why),
+    }
+  }
+
+  // 2) Relax / discover with distance change — on the updated vertex.
+  if (update && (step.event === 'relax' || step.event === 'discover')) {
+    return {
+      id: fingerprint(['path', stepIndex, step.event, 'node', update.vertex, update.next]),
       kind: 'update',
       anchor: { type: 'node', id: update.vertex },
-      headline: `Wierzchołek ${update.vertex}`,
-      body: `Nowa odległość: ${formatDistance(update.previous)} → ${formatDistance(update.next)}.`,
-    })
-  }
-
-  // Vertex-focused steps (selection / visit / init / done) — skip if we already have an edge bubble for this op.
-  if (
-    step.current
-    && !edge
-    && (step.event === 'extract' || step.event === 'visit' || step.event === 'select' || step.event === 'init' || step.event === 'done')
-  ) {
-    candidates.push({
-      id: `node-${step.current}-${step.event}`,
-      kind: step.event === 'done' ? 'done' : kind,
-      anchor: { type: 'node', id: step.current },
       headline: step.title,
-      body: `${step.message}${why}`.trim(),
-    })
-  }
-
-  // Rare: select/visit while also examining a different edge — allow second distinct bubble.
-  if (
-    step.current
-    && edge
-    && (step.event === 'extract' || step.event === 'visit' || step.event === 'select')
-    && step.current !== edge.source
-    && step.current !== edge.target
-  ) {
-    candidates.push({
-      id: `node-${step.current}-${step.event}`,
-      kind: 'analyze',
-      anchor: { type: 'node', id: step.current },
-      headline: step.title,
-      body: step.message,
-    })
-  }
-
-  if (candidates.length === 0) {
-    const fallbackId = step.current
-      ?? step.frontier[0]
-      ?? step.visited[step.visited.length - 1]
-      ?? update?.vertex
-      ?? null
-    if (fallbackId) {
-      candidates.push({
-        id: `fallback-${fallbackId}`,
-        kind,
-        anchor: { type: 'node', id: fallbackId },
-        headline: step.title,
-        body: `${step.message}${why}`.trim(),
-      })
+      body: shortBody(
+        `${step.message} d(${update.vertex}): ${formatDistance(update.previous)} → ${formatDistance(update.next)}.`,
+        why,
+      ),
     }
   }
 
-  return finalize(candidates)
-}
+  // 3) Discover without distanceUpdates — on the newly found vertex (edge target).
+  if (edge && step.event === 'discover') {
+    return {
+      id: fingerprint(['path', stepIndex, step.event, 'node', edge.target]),
+      kind: 'update',
+      anchor: { type: 'node', id: edge.target },
+      headline: step.title,
+      body: shortBody(step.message, why),
+    }
+  }
 
-export function calloutsFromMstStep(step: MSTStep | undefined | null): GraphCallout[] {
-  if (!step) return []
-  const edge = parseActiveEdge(step.activeEdge)
-  const kind = kindFromMstEvent(step.event)
-  const why = step.reason ? ` ${step.reason}` : ''
-  const cost = `Łączna waga: ${step.treeWeight}.`
-  const focusVertex = step.visited[step.visited.length - 1] ?? null
-  const candidates: GraphCallout[] = []
-
-  if (edge) {
-    candidates.push({
-      id: `mst-edge-${edge.source}-${edge.target}-${step.event}`,
+  // 4) Relax without update map — on the active edge.
+  if (edge && step.event === 'relax') {
+    return {
+      id: fingerprint(['path', stepIndex, step.event, 'edge', edge.source, edge.target]),
       kind,
       anchor: { type: 'edge', source: edge.source, target: edge.target },
       headline: step.title,
-      body: `${step.message} ${cost}${why}`.trim(),
-    })
-  } else if (focusVertex) {
-    candidates.push({
-      id: `mst-node-${focusVertex}-${step.event}`,
-      kind: step.event === 'done' ? 'done' : kind,
-      anchor: { type: 'node', id: focusVertex },
-      headline: step.title,
-      body: `${step.message}${step.detail ? ` ${step.detail}` : ''} ${cost}${why}`.trim(),
-    })
+      body: shortBody(step.message, why),
+    }
   }
 
-  // Init / done without edge: keep a single vertex bubble.
-  if (!edge && focusVertex && candidates.length === 0) {
-    candidates.push({
-      id: `mst-fallback-${focusVertex}`,
+  // 5) Selection / visit / extract / init — on current vertex.
+  if (
+    step.current
+    && (step.event === 'select' || step.event === 'visit' || step.event === 'extract' || step.event === 'init')
+  ) {
+    return {
+      id: fingerprint(['path', stepIndex, step.event, 'node', step.current]),
+      kind,
+      anchor: { type: 'node', id: step.current },
+      headline: step.title,
+      body: shortBody(step.message, why),
+    }
+  }
+
+  // 6) Done / generic — fixed canvas callout (not tied to a random vertex).
+  if (step.event === 'done' || step.event === 'init') {
+    return {
+      id: fingerprint(['path', stepIndex, step.event, 'canvas']),
+      kind: step.event === 'done' ? 'done' : 'info',
+      anchor: { type: 'canvas' },
+      headline: step.title,
+      body: shortBody(step.message, why),
+    }
+  }
+
+  // 7) Last resort: current / frontier / last visited.
+  const fallback = step.current
+    ?? step.frontier[0]
+    ?? step.visited[step.visited.length - 1]
+    ?? null
+  if (fallback) {
+    return {
+      id: fingerprint(['path', stepIndex, step.event, 'node', fallback]),
+      kind,
+      anchor: { type: 'node', id: fallback },
+      headline: step.title,
+      body: shortBody(step.message, why),
+    }
+  }
+
+  return {
+    id: fingerprint(['path', stepIndex, step.event, 'canvas']),
+    kind,
+    anchor: { type: 'canvas' },
+    headline: step.title,
+    body: shortBody(step.message, why),
+  }
+}
+
+/**
+ * Exactly one active callout for an MST step.
+ */
+export function calloutFromMstStep(
+  step: MSTStep | undefined | null,
+  stepIndex = 0,
+): GraphCallout | null {
+  if (!step) return null
+
+  const edge = parseActiveEdge(step.activeEdge)
+  const kind = kindFromMstEvent(step.event)
+  const why = step.reason
+  const costNote = `Łączna waga: ${step.treeWeight}.`
+  const focusVertex = step.visited[step.visited.length - 1] ?? null
+
+  if (edge && (step.event === 'consider' || step.event === 'accept' || step.event === 'reject' || step.event === 'candidate')) {
+    return {
+      id: fingerprint(['mst', stepIndex, step.event, 'edge', edge.source, edge.target]),
+      kind,
+      anchor: { type: 'edge', source: edge.source, target: edge.target },
+      headline: step.title,
+      body: shortBody(`${step.message} ${costNote}`, why),
+    }
+  }
+
+  if (step.event === 'done' || step.event === 'init' || step.event === 'sort') {
+    return {
+      id: fingerprint(['mst', stepIndex, step.event, 'canvas']),
+      kind: step.event === 'done' ? 'done' : kind,
+      anchor: { type: 'canvas' },
+      headline: step.title,
+      body: shortBody(`${step.message} ${costNote}`, why),
+    }
+  }
+
+  if (focusVertex) {
+    return {
+      id: fingerprint(['mst', stepIndex, step.event, 'node', focusVertex]),
       kind,
       anchor: { type: 'node', id: focusVertex },
       headline: step.title,
-      body: step.message,
-    })
+      body: shortBody(`${step.message} ${costNote}`, why),
+    }
   }
 
-  return finalize(candidates)
+  return {
+    id: fingerprint(['mst', stepIndex, step.event, 'canvas']),
+    kind,
+    anchor: { type: 'canvas' },
+    headline: step.title,
+    body: shortBody(step.message, why),
+  }
+}
+
+/** @deprecated Prefer calloutFromStep — kept as array adapter for overlay API. */
+export function calloutsFromStep(step: Step | undefined | null, stepIndex = 0): GraphCallout[] {
+  const one = calloutFromStep(step, stepIndex)
+  return one ? [one] : []
+}
+
+/** @deprecated Prefer calloutFromMstStep — kept as array adapter for overlay API. */
+export function calloutsFromMstStep(step: MSTStep | undefined | null, stepIndex = 0): GraphCallout[] {
+  const one = calloutFromMstStep(step, stepIndex)
+  return one ? [one] : []
 }

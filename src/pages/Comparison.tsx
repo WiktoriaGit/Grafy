@@ -171,8 +171,8 @@ export default function Comparison() {
 
   const calloutsForSide = (side: SideResult | null, index: number) => {
     if (!side) return []
-    if (side.kind === 'path') return calloutsFromStep(pathStepAt(side, index))
-    return calloutsFromMstStep(mstStepAt(side, index))
+    if (side.kind === 'path') return calloutsFromStep(pathStepAt(side, index), index)
+    return calloutsFromMstStep(mstStepAt(side, index), index)
   }
 
   const graph: Graph = useMemo(() => fromEditor(document), [document])
