@@ -18,8 +18,8 @@ export default function App() {
           <Route path="/algorithms" element={<Algorithms />} />
           <Route path="/experiments" element={<Experiments />} />
           <Route path="/results" element={<Results />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
           <Route path="/mst" element={<MST />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>
