@@ -4,7 +4,21 @@ export const WORKSPACE_KEY = 'graphlab-editor-v1'
 export const WORKSPACE_META_KEY = 'graphlab-workspace-meta-v1'
 
 export type WorkspaceNode = { id: string; position: { x: number; y: number }; label?: string }
-export type WorkspaceEdge = { source: string; target: string; weight: number }
+export type WorkspaceEdge = {
+  source: string
+  target: string
+  weight: number
+  sourceHandle?: string
+  targetHandle?: string
+}
+
+export const VERTEX_NODE_TYPE = 'graphVertex' as const
+export const VERTEX_HANDLE_IDS = ['top', 'right', 'bottom', 'left'] as const
+export type VertexHandleId = (typeof VERTEX_HANDLE_IDS)[number]
+
+function isHandleId(value: unknown): value is VertexHandleId {
+  return typeof value === 'string' && (VERTEX_HANDLE_IDS as readonly string[]).includes(value)
+}
 export type WorkspaceGraph = {
   version: 1
   directed: boolean
@@ -21,38 +35,37 @@ export type WorkspaceMeta = {
   openInComparison?: boolean
 }
 
-const nodeStyle = {
-  width: 54,
-  height: 54,
-  borderRadius: '50%',
-  background: '#283657',
-  border: '2px solid #818cf8',
-  color: '#fff',
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center',
-  fontWeight: 700,
-  boxShadow: '0 5px 22px #0003',
-}
-
 const edgeStyle = { stroke: '#7c8ba7', strokeWidth: 2 }
 
 export function makeEditorNode(id: string, x: number, y: number, label = id): Node {
   return {
     id,
+    type: VERTEX_NODE_TYPE,
     position: { x, y },
     data: { label },
-    style: nodeStyle,
+    // Appearance is rendered by GraphVertexNode (.ge-vertex). Avoid outer style so
+    // handle anchors sit on the circle perimeter instead of a double-sized wrapper.
   }
 }
 
-export function makeEditorEdge(source: string, target: string, weight: number, directed: boolean): Edge {
+export function makeEditorEdge(
+  source: string,
+  target: string,
+  weight: number,
+  directed: boolean,
+  handles?: { sourceHandle?: string | null; targetHandle?: string | null },
+): Edge {
+  const sourceHandle = isHandleId(handles?.sourceHandle) ? handles.sourceHandle : undefined
+  const targetHandle = isHandleId(handles?.targetHandle) ? handles.targetHandle : undefined
   return {
     id: `${source}-${target}-${crypto.randomUUID()}`,
     source,
     target,
+    sourceHandle,
+    targetHandle,
     label: String(weight),
-    type: 'straight',
+    // Bezier paths leave circular nodes at the chosen perimeter handle instead of crossing the disk.
+    type: 'default',
     style: edgeStyle,
     markerEnd: directed ? { type: MarkerType.ArrowClosed, color: '#7c8ba7' } : undefined,
     labelStyle: { fill: '#e2e8f0', fontWeight: 700, fontSize: 12 },
@@ -88,6 +101,8 @@ export function serializeWorkspace(
       source: e.source,
       target: e.target,
       weight: Number(e.label ?? 1),
+      ...(isHandleId(e.sourceHandle) ? { sourceHandle: e.sourceHandle } : {}),
+      ...(isHandleId(e.targetHandle) ? { targetHandle: e.targetHandle } : {}),
     })),
     start,
     end,
@@ -98,7 +113,10 @@ export function workspaceToFlow(doc: WorkspaceGraph): { nodes: Node[]; edges: Ed
   return {
     directed: doc.directed,
     nodes: doc.nodes.map(n => makeEditorNode(n.id, n.position.x, n.position.y, n.label ?? n.id)),
-    edges: doc.edges.map(e => makeEditorEdge(e.source, e.target, e.weight, doc.directed)),
+    edges: doc.edges.map(e => makeEditorEdge(e.source, e.target, e.weight, doc.directed, {
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle,
+    })),
   }
 }
 
@@ -145,7 +163,13 @@ export function parseWorkspace(raw: unknown): WorkspaceGraph {
     if (!Number.isFinite(weight)) {
       throw new Error(`Krawędź ${e.source} → ${e.target} ma nieprawidłową wagę.`)
     }
-    return { source: e.source, target: e.target, weight }
+    return {
+      source: e.source,
+      target: e.target,
+      weight,
+      ...(isHandleId(e.sourceHandle) ? { sourceHandle: e.sourceHandle } : {}),
+      ...(isHandleId(e.targetHandle) ? { targetHandle: e.targetHandle } : {}),
+    }
   })
 
   return {

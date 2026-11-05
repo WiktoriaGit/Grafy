@@ -19,9 +19,70 @@
 .ge-weight > div { display:flex; gap:7px; margin-top:7px; }
 .ge-weight button { padding:0 10px; background:#4f46e5; border:0; color:#fff; border-radius:7px; }
 .ge-flow { width:100%; height:660px; background:#101a2b; }
-.ge-flow .react-flow__node-default { padding:0; }
-.ge-flow .react-flow__handle { width:9px; height:9px; background:#a5b4fc; border:1px solid #0e1627; }
-.ge-flow .react-flow__node.selected { box-shadow:0 0 0 4px #6366f155; }
+.ge-flow .react-flow__node-default,
+.ge-flow .react-flow__node-graphVertex {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  width: auto;
+  height: auto;
+}
+.ge-vertex {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #283657;
+  border: 2px solid #818cf8;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  box-shadow: 0 5px 22px #0003;
+  position: relative;
+}
+.ge-vertex.is-selected,
+.ge-flow .react-flow__node.selected .ge-vertex {
+  box-shadow: 0 0 0 4px #6366f155, 0 5px 22px #0003;
+}
+.ge-vertex-label {
+  pointer-events: none;
+  font-size: 13px;
+  line-height: 1;
+}
+/* Large invisible hit target, small visible dot */
+.ge-flow .ge-handle {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  display: grid;
+  place-items: center;
+  z-index: 3;
+}
+.ge-flow .ge-handle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a5b4fc;
+  border: 1px solid #0e1627;
+  box-shadow: 0 0 0 1px #1e293b88;
+  pointer-events: none;
+  transition: transform .12s ease, background .12s ease;
+}
+.ge-flow .ge-handle:hover .ge-handle-dot,
+.ge-flow .ge-handle.connecting .ge-handle-dot,
+.ge-flow .ge-handle-connecting .ge-handle-dot {
+  background: #c7d2fe;
+  transform: scale(1.15);
+}
+.ge-flow .react-flow__edge-path {
+  stroke-width: 2;
+}
+.ge-flow .react-flow__edge.selected .react-flow__edge-path {
+  stroke: #a5b4fc;
+}
+.ge-flow .react-flow__node.selected { box-shadow: none; }
 .ge-flow .react-flow__controls { border:1px solid #334155; border-radius:9px; overflow:hidden; box-shadow:none; }
 .ge-flow .react-flow__controls-button { background:#1e293b; color:#cbd5e1; border-bottom:1px solid #334155; }
 .ge-flow .react-flow__controls-button svg { fill:currentColor; }

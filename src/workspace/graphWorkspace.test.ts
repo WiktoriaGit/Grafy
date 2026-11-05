@@ -16,14 +16,20 @@ describe('Integracja edytora z algorytmami', () => {
       { id: 'C', position: { x: 210, y: 20 }, data: { label: 'C' }, style: {} },
     ]
     const edges = [
-      { id: '1', source: 'A', target: 'B', label: '2' },
-      { id: '2', source: 'B', target: 'C', label: '3' },
+      { id: '1', source: 'A', target: 'B', label: '2', sourceHandle: 'top', targetHandle: 'left' },
+      { id: '2', source: 'B', target: 'C', label: '3', sourceHandle: 'right', targetHandle: 'top' },
     ]
     const saved = serializeWorkspace(nodes as never, edges as never, true, 'A', 'C')
+    expect(saved.edges[0]).toMatchObject({ sourceHandle: 'top', targetHandle: 'left' })
     const restored = workspaceToFlow(parseWorkspace(saved))
     expect(restored.nodes.map(n => n.id)).toEqual(['A', 'B', 'C'])
     expect(restored.nodes[0].position).toEqual({ x: 10, y: 20 })
+    expect(restored.nodes.every(n => n.type === 'graphVertex')).toBe(true)
     expect(restored.edges.map(e => Number(e.label))).toEqual([2, 3])
+    expect(restored.edges[0].sourceHandle).toBe('top')
+    expect(restored.edges[0].targetHandle).toBe('left')
+    expect(restored.edges[1].sourceHandle).toBe('right')
+    expect(restored.edges[1].targetHandle).toBe('top')
     expect(restored.directed).toBe(true)
   })
 

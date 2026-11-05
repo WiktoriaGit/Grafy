@@ -4,6 +4,7 @@ import {
   addEdge,
   Background,
   BackgroundVariant,
+  ConnectionMode,
   Controls,
   ReactFlow,
   useEdgesState,
@@ -14,6 +15,7 @@ import {
   type OnSelectionChangeParams,
   type ReactFlowInstance,
 } from '@xyflow/react'
+import GraphVertexNode from '../components/GraphVertexNode'
 import {
   Download,
   FileUp,
@@ -58,6 +60,10 @@ type HistorySnapshot = {
 type ToolMode = 'select' | 'place'
 
 const HISTORY_LIMIT = 60
+
+const editorNodeTypes = {
+  graphVertex: GraphVertexNode,
+}
 
 function cloneSnapshot(nodes: Node[], edges: Edge[], directed: boolean): HistorySnapshot {
   return {
@@ -290,7 +296,13 @@ export default function GraphEditor() {
       return
     }
     pushHistory()
-    setEdges(es => addEdge(makeEditorEdge(connection.source!, connection.target!, 1, directed), es))
+    setEdges(es => addEdge(
+      makeEditorEdge(connection.source!, connection.target!, 1, directed, {
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+      }),
+      es,
+    ))
     setMessage(`Dodano krawędź ${connection.source} → ${connection.target} z wagą 1. Możesz ustawić wagę dodatnią, zero lub ujemną.`)
   }, [edges, directed, pushHistory, setEdges])
 
@@ -499,7 +511,7 @@ export default function GraphEditor() {
               <strong>Jak zacząć?</strong>
               <ol>
                 <li>Włącz tryb „Dodaj kliknięciem” i kliknij na płótnie.</li>
-                <li>Przeciągnij od uchwytu jednego wierzchołka do drugiego, aby dodać krawędź.</li>
+                <li>Przeciągnij od dowolnego z 4 uchwytów (góra/dół/lewo/prawo) do uchwytu drugiego wierzchołka.</li>
                 <li>Zaznacz element, aby zmienić nazwę lub wagę.</li>
                 <li>Kliknij „Wizualizuj ten graf” lub „Porównaj algorytmy”, aby przejść dalej.</li>
               </ol>
@@ -663,9 +675,16 @@ export default function GraphEditor() {
             <ReactFlow
               nodes={nodes}
               edges={edges}
+              nodeTypes={editorNodeTypes}
+              connectionMode={ConnectionMode.Loose}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={connect}
+              isValidConnection={connection => Boolean(
+                connection.source
+                && connection.target
+                && connection.source !== connection.target,
+              )}
               onSelectionChange={selectionChanged}
               onPaneClick={onPaneClick}
               onNodeDragStart={() => pushHistory()}
