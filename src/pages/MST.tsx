@@ -7,6 +7,8 @@ import { calculateMST, type MSTAlgorithm, type MSTEdge, type MSTResult } from '.
 import { DEMO_GRAPHS } from '../utils/demoGraphs'
 import { ALGORITHM_GUIDES } from '../utils/demoScenarios'
 import AlgorithmPlayer from '../visualization/AlgorithmPlayer'
+import GraphCalloutsOverlay from '../visualization/GraphCalloutsOverlay'
+import { calloutsFromMstStep } from '../visualization/graphCallouts'
 import MstInsightPanel from '../visualization/MstInsightPanel'
 import { useStepPlayer } from '../visualization/useStepPlayer'
 import { loadWorkspace } from '../workspace/graphWorkspace'
@@ -35,6 +37,7 @@ export default function MST() {
   const [notice, setNotice] = useState(
     'Wczytano nieskierowany graf MST. Uruchom Prima lub Kruskala — albo otwórz Porównanie, by zobaczyć oba jednocześnie.',
   )
+  const [showGraphCallouts, setShowGraphCallouts] = useState(true)
   const player = useStepPlayer()
   const { bind, seek } = player
   const guide = ALGORITHM_GUIDES[algorithm]
@@ -45,6 +48,7 @@ export default function MST() {
     [graph],
   )
   const step = result?.steps[player.index]
+  const graphCallouts = useMemo(() => calloutsFromMstStep(step), [step])
   const finished = !!result && player.isLast
 
   useEffect(() => {
@@ -202,9 +206,19 @@ export default function MST() {
               <span><i className="algo-dot algo-dot-frontier" /> kandydat (Prim)</span>
               <span><i className="algo-dot algo-dot-visited" /> wybrana krawędź</span>
             </div>
+            <label className="algo-check">
+              <input
+                type="checkbox"
+                checked={showGraphCallouts}
+                onChange={e => setShowGraphCallouts(e.target.checked)}
+              />
+              <span>Pokazuj wyjaśnienia na grafie</span>
+            </label>
             <p className="algo-note">
-              MST istnieje dla spójnego grafu nieskierowanego. Dla niespójnego budujemy minimalny las rozpinający
-              (Prim otwiera kolejne drzewa w pozostałych składowych; Kruskal łączy komponenty Union–Find).
+              MST to minimalne drzewo (las) rozpinające — inny problem niż najkrótsza ścieżka od źródła.
+              Porównanie Prim vs Kruskal dotyczy kolejności wyboru krawędzi i łącznej wagi drzewa na małych grafach edukacyjnych,
+              nie benchmarku z Eksperymentów. Dla niespójnego grafu budujemy minimalny las rozpinający
+              (Prim otwiera kolejne drzewa; Kruskal łączy komponenty Union–Find).
             </p>
           </div>
         </section>
@@ -227,12 +241,14 @@ export default function MST() {
             >
               <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#334155" />
               <Controls showInteractive={false} />
+              <GraphCalloutsOverlay callouts={graphCallouts} enabled={showGraphCallouts} />
             </ReactFlow>
           </div>
           <AlgorithmPlayer player={player} disabled={!result} />
           <div className="algo-message">
             <strong>{step?.title ?? 'Gotowe'}</strong>
             <span>{step?.message ?? notice}</span>
+            {step?.reason && <small className="algo-why"><b>Dlaczego?</b> {step.reason}</small>}
             {step && <small>Łączna waga bieżąca: {step.treeWeight}</small>}
           </div>
         </section>
@@ -251,8 +267,8 @@ export default function MST() {
 
       <div className="algo-metrics">
         <div className="panel">
-          <small>Kroki animacji</small>
-          <strong>{result ? `${player.index + 1} / ${result.steps.length}` : '—'}</strong>
+          <small>Krok</small>
+          <strong>{result ? `${player.index + 1} z ${result.steps.length}` : '—'}</strong>
         </div>
         <div className="panel">
           <small>Wybrane krawędzie</small>

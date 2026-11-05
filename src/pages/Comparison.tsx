@@ -16,11 +16,14 @@ import {
   COMPARISON_ALGO_NAMES,
   isMstAlgorithm,
   METRIC_EXPLANATIONS,
+  mstStepAt,
+  pathStepAt,
   runComparison,
   sideStepCount,
   sideStepMessage,
   type ComparisonAlgoId,
   type ComparisonRun,
+  type SideResult,
 } from '../comparison/compareCore'
 import {
   buildSideFlow,
@@ -30,13 +33,17 @@ import { DEMO_GRAPHS, type DemoGraphId } from '../utils/demoGraphs'
 import { ALGORITHM_GUIDES } from '../utils/demoScenarios'
 import { sampleGraph } from '../utils/graphData'
 import AlgorithmPlayer from '../visualization/AlgorithmPlayer'
+import GraphCalloutsOverlay from '../visualization/GraphCalloutsOverlay'
+import { calloutsFromMstStep, calloutsFromStep } from '../visualization/graphCallouts'
 import { useStepPlayer } from '../visualization/useStepPlayer'
 import {
   clearOpenInComparisonFlag,
   loadWorkspace,
   loadWorkspaceMeta,
+  saveWorkspace,
   type WorkspaceGraph,
 } from '../workspace/graphWorkspace'
+import GraphLibraryPanel from '../components/GraphLibraryPanel'
 import './Algorithms.css'
 import './Comparison.css'
 
@@ -156,10 +163,17 @@ export default function Comparison() {
   const [comparison, setComparison] = useState<ComparisonRun | null>(null)
   const [notice, setNotice] = useState(initial.notice)
   const [controlMode, setControlMode] = useState<'shared' | 'independent'>('shared')
+  const [showGraphCallouts, setShowGraphCallouts] = useState(true)
 
   const leftPlayer = useStepPlayer()
   const rightPlayer = useStepPlayer()
   const sharedPlayer = useStepPlayer()
+
+  const calloutsForSide = (side: SideResult | null, index: number) => {
+    if (!side) return []
+    if (side.kind === 'path') return calloutsFromStep(pathStepAt(side, index))
+    return calloutsFromMstStep(mstStepAt(side, index))
+  }
 
   const graph: Graph = useMemo(() => fromEditor(document), [document])
   const pairWarnings = useMemo(() => buildPairWarnings(leftAlgo, rightAlgo), [leftAlgo, rightAlgo])
@@ -358,6 +372,14 @@ export default function Comparison() {
               <option value="independent">Niezależne</option>
             </select>
           </label>
+          <label className="algo-check" style={{ alignSelf: 'end' }}>
+            <input
+              type="checkbox"
+              checked={showGraphCallouts}
+              onChange={e => setShowGraphCallouts(e.target.checked)}
+            />
+            <span>Pokazuj wyjaśnienia na grafie</span>
+          </label>
         </div>
         <div className="cmp-config-actions">
           <button className="algo-btn algo-primary" onClick={execute}>
@@ -375,6 +397,24 @@ export default function Comparison() {
             <span>{graph.directed ? 'Skierowany' : 'Nieskierowany'}</span>
             <span>{demoId === 'custom' ? 'Źródło: edytor' : 'Źródło: przykład lokalny'}</span>
           </div>
+          <GraphLibraryPanel
+            compact
+            currentGraph={null}
+            title="Biblioteka grafów"
+            onLoad={entry => {
+              saveWorkspace(entry.graph, { source: 'file', openInComparison: true })
+              setDocument(workspaceToSaved(entry.graph))
+              setStart(entry.graph.start && entry.graph.nodes.some(n => n.id === entry.graph.start)
+                ? entry.graph.start
+                : entry.graph.nodes[0]?.id ?? '')
+              setEnd(entry.graph.end && entry.graph.nodes.some(n => n.id === entry.graph.end)
+                ? entry.graph.end
+                : entry.graph.nodes.at(-1)?.id ?? '')
+              setDemoId('custom')
+              setComparison(null)
+              setNotice(`Wczytano z biblioteki: ${entry.name}.`)
+            }}
+          />
         </div>
         {pairWarnings.length > 0 && (
           <div className="cmp-warnings">
@@ -391,8 +431,26 @@ export default function Comparison() {
 
       <div className="cmp-boards">
         {[
-          { side: 'left' as const, algo: leftAlgo, flow: leftFlow, caption: leftCaption, player: leftPlayer, index: leftIndex, count: leftCount },
-          { side: 'right' as const, algo: rightAlgo, flow: rightFlow, caption: rightCaption, player: rightPlayer, index: rightIndex, count: rightCount },
+          {
+            side: 'left' as const,
+            algo: leftAlgo,
+            flow: leftFlow,
+            caption: leftCaption,
+            player: leftPlayer,
+            index: leftIndex,
+            count: leftCount,
+            callouts: calloutsForSide(leftSide, leftIndex),
+          },
+          {
+            side: 'right' as const,
+            algo: rightAlgo,
+            flow: rightFlow,
+            caption: rightCaption,
+            player: rightPlayer,
+            index: rightIndex,
+            count: rightCount,
+            callouts: calloutsForSide(rightSide, rightIndex),
+          },
         ].map(board => (
           <section key={board.side} className="panel cmp-board">
             <div className="panel-header">
@@ -412,6 +470,7 @@ export default function Comparison() {
               >
                 <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#334155" />
                 <Controls showInteractive={false} />
+                <GraphCalloutsOverlay callouts={board.callouts} enabled={showGraphCallouts} />
               </ReactFlow>
             </div>
             {controlMode === 'independent' && (

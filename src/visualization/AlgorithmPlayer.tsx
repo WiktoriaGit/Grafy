@@ -51,8 +51,8 @@ export default function AlgorithmPlayer({ player, disabled }: Props) {
           <span>Reset</span>
         </button>
 
-        <span className="algo-player-step">
-          Krok animacji {player.stepCount ? player.index + 1 : 0} / {player.stepCount}
+        <span className="algo-player-step" aria-live="polite">
+          Krok {player.stepCount ? player.index + 1 : 0} z {player.stepCount}
         </span>
 
         <label className="algo-player-speed">

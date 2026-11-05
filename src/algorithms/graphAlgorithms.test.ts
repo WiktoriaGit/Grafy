@@ -90,6 +90,14 @@ describe('Najkrotsze sciezki', () => {
     expect(result.distances.D).toBe(6)
   })
 
+  it('Dijkstra zwraca odległości do wszystkich osiągalnych wierzchołków', () => {
+    const result = runAlgorithm(graph, 'dijkstra', 'A', 'D')
+    expect(result.distances).toMatchObject({ A: 0, C: 2, B: 3, D: 6 })
+    expect(result.parents.C).toBe('A')
+    expect(result.parents.B).toBe('C')
+    expect(result.parents.D).toBe('B')
+  })
+
   it('Dijkstra odrzuca ujemne wagi', () => {
     expect(() => runAlgorithm({ ...graph, links: [{ source: 'A', target: 'B', weight: -1 }] }, 'dijkstra', 'A', 'B')).toThrow()
   })
@@ -106,6 +114,50 @@ describe('Najkrotsze sciezki', () => {
     }, 'bellman', 'A', 'C')
     expect(result.distance).toBe(1)
     expect(result.path).toEqual(['A', 'B', 'C'])
+    expect(result.distances).toMatchObject({ A: 0, B: 4, C: 1 })
+  })
+
+  it('Bellman-Ford pozwala zmienić cel bez ponownego liczenia (tablica poprzedników)', () => {
+    const result = runAlgorithm({
+      directed: true,
+      vertices: ['A', 'B', 'C', 'D'],
+      links: [
+        { source: 'A', target: 'B', weight: 4 },
+        { source: 'A', target: 'C', weight: 8 },
+        { source: 'B', target: 'C', weight: -3 },
+        { source: 'A', target: 'D', weight: 2 },
+      ],
+    }, 'bellman', 'A', 'C')
+    expect(pathFromParents(result.start, 'D', result.parents)).toEqual(['A', 'D'])
+    expect(result.distances.D).toBe(2)
+    expect(pathFromParents(result.start, 'C', result.parents)).toEqual(['A', 'B', 'C'])
+  })
+
+  it('Dijkstra i Bellman-Ford dają te same odległości przy wagach nieujemnych', () => {
+    const dijkstra = runAlgorithm(graph, 'dijkstra', 'A', 'D')
+    const bellman = runAlgorithm(graph, 'bellman', 'A', 'D')
+    expect(bellman.distances).toEqual(dijkstra.distances)
+    expect(bellman.path).toEqual(dijkstra.path)
+  })
+
+  it('BFS daje najkrótszą ścieżkę w liczbie krawędzi; DFS nie musi', () => {
+    const branched = {
+      directed: true,
+      vertices: ['A', 'B', 'C', 'D'],
+      links: [
+        { source: 'A', target: 'B', weight: 1 },
+        { source: 'A', target: 'C', weight: 1 },
+        { source: 'B', target: 'D', weight: 1 },
+        { source: 'C', target: 'D', weight: 1 },
+      ],
+    }
+    const bfs = runAlgorithm(branched, 'bfs', 'A', 'D')
+    expect(bfs.path).toEqual(['A', 'B', 'D'])
+    expect(bfs.distance).toBe(2)
+    const dfs = runAlgorithm(branched, 'dfs', 'A', 'D')
+    expect(pathFromParents(dfs.start, 'D', dfs.parents).length).toBeGreaterThan(0)
+    // DFS nie jest kontraktowo najkrótszą drogą — sprawdzamy tylko, że eksploruje osiągalne.
+    expect(dfs.reachable.sort()).toEqual(['A', 'B', 'C', 'D'])
   })
 
   it('Bellman-Ford sygnalizuje ujemny cykl wplywajacy na cel', () => {

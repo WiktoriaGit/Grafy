@@ -122,6 +122,26 @@ export const COMPLEXITY_CATALOG: ComplexityEntry[] = [
     notes: 'Dla grafu skierowanego nie tworzy łuków wstecz. Nieskierowany generator już umieszcza oba kierunki w adjacency.',
     source: 'benchmark.ts → runBenchmarkAlgorithm(..., "bellman")',
   },
+  {
+    id: 'prim-bench',
+    name: 'Prim (z kopcem)',
+    context: 'benchmark',
+    time: 'O((V + E) log V)',
+    memory: 'O(V + E)',
+    structures: 'MinHeap + tablica najlepszej krawędzi do drzewa; budowa lasu dla niespójnych grafów',
+    notes: 'Tylko graf nieskierowany. Inny problem niż najkrótsza ścieżka od źródła.',
+    source: 'benchmark.ts → primHeap',
+  },
+  {
+    id: 'kruskal-bench',
+    name: 'Kruskal (Union–Find)',
+    context: 'benchmark',
+    time: 'O(E log E + E · α(V))',
+    memory: 'O(V + E)',
+    structures: 'Sortowanie krawędzi + Union–Find z kompresją ścieżek',
+    notes: 'Tylko graf nieskierowany. Porównywalny z Primem w kategorii MST, nie z BFS/Dijkstrą.',
+    source: 'benchmark.ts → kruskalUnionFind',
+  },
 ]
 
 export const COMPLEXITY_COMPARISON_NOTE =

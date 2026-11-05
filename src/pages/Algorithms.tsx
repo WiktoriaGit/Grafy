@@ -17,6 +17,8 @@ import { ALGORITHM_GUIDES } from '../utils/demoScenarios'
 import { sampleGraph } from '../utils/graphData'
 import AlgorithmPlayer from '../visualization/AlgorithmPlayer'
 import InsightPanel from '../visualization/InsightPanel'
+import GraphCalloutsOverlay from '../visualization/GraphCalloutsOverlay'
+import { calloutsFromStep } from '../visualization/graphCallouts'
 import { useStepPlayer } from '../visualization/useStepPlayer'
 import {
   clearOpenInAlgorithmsFlag,
@@ -26,6 +28,7 @@ import {
   type WorkspaceGraph,
 } from '../workspace/graphWorkspace'
 import { describeUnreachable, validateGraphForAlgorithm } from '../workspace/validateAlgorithm'
+import GraphLibraryPanel from '../components/GraphLibraryPanel'
 import './Algorithms.css'
 
 const names: Record<Algorithm, string> = {
@@ -171,29 +174,63 @@ export default function Algorithms() {
   const [run, setRun] = useState<Run | null>(null)
   const [notice, setNotice] = useState(initial.notice)
   const [hints, setHints] = useState<string[]>([])
+  const [showGraphCallouts, setShowGraphCallouts] = useState(true)
   const player = useStepPlayer()
   const { bind, seek } = player
   const guide = ALGORITHM_GUIDES[algorithm]
 
   const graph: Graph = useMemo(() => fromEditor(document), [document])
   const step = run?.steps[player.index]
+  const graphCallouts = useMemo(() => calloutsFromStep(step), [step])
   const showDistances = algorithm === 'dijkstra' || algorithm === 'bellman'
   const structureKind = run?.structureKind
     ?? (algorithm === 'bfs' ? 'queue' : algorithm === 'dfs' ? 'stack' : algorithm === 'dijkstra' ? 'priority' : 'none')
 
   const displayPath = useMemo(() => {
-    if (!run) return [] as string[]
-    if (algorithm === 'bellman') return run.path
+    if (!run || run.error) return [] as string[]
     return pathFromParents(run.start, end, run.parents)
-  }, [run, algorithm, end])
+  }, [run, end])
 
   const displayDistance = useMemo(() => {
-    if (!run) return null as number | null
+    if (!run || run.error) return null as number | null
+    if (algorithm === 'dfs') return null
     if (algorithm === 'dijkstra' || algorithm === 'bellman') return distanceFromMap(end, run.distances)
+    // BFS: koszt = liczba krawędzi na ścieżce w drzewie BFS
     return displayPath.length ? displayPath.length - 1 : null
   }, [run, algorithm, end, displayPath])
 
-  const showPath = !!run && player.isLast
+  const showPath = !!run && player.isLast && algorithm !== 'dfs'
+
+  const resultRows = useMemo(() => {
+    if (!run) return [] as Array<{
+      id: string
+      cost: string
+      parent: string
+      reachable: boolean
+      isTarget: boolean
+    }>
+    return graph.vertices.map(id => {
+      const reachable = id === run.start || run.reachable.includes(id)
+      let cost = '—'
+      if (algorithm === 'dfs') {
+        cost = reachable ? 'n/d' : '∞'
+      } else if (algorithm === 'bfs') {
+        const path = pathFromParents(run.start, id, run.parents)
+        cost = path.length ? String(path.length - 1) : '∞'
+      } else if (run.error) {
+        cost = reachable ? formatDistance(run.distances[id]) : '∞'
+      } else {
+        cost = formatDistance(run.distances[id])
+      }
+      return {
+        id,
+        cost,
+        parent: run.parents[id] ?? '—',
+        reachable,
+        isTarget: id === end,
+      }
+    })
+  }, [run, graph.vertices, algorithm, end])
 
   useEffect(() => {
     bind(run?.steps.length ?? 0)
@@ -275,21 +312,32 @@ export default function Algorithms() {
 
   const changeEnd = (value: string) => {
     setEnd(value)
-    if (!run || algorithm === 'bellman') {
-      setRun(null)
+    if (!run) return
+    if (run.error) {
+      setNotice(`Wynik jest nieważny z powodu błędu algorytmu (${run.error}). Zmiana celu nie odtwarza wiarygodnej ścieżki.`)
+      return
+    }
+    if (algorithm === 'dfs') {
+      const path = pathFromParents(run.start, value, run.parents)
+      setNotice(
+        path.length
+          ? `Cel ${value}: ścieżka w drzewie DFS ${path.join(' → ')} — to NIE jest gwarantowana najkrótsza droga.`
+          : `Wierzchołek ${value} nie należy do drzewa przeszukiwania DFS ze startu ${run.start}.`,
+      )
       return
     }
     if (!run.reachable.includes(value) && value !== run.start) {
-      setNotice(`Wierzchołek ${value} nie jest osiągalny ze startu ${run.start} w zakończonej eksploracji.`)
+      setNotice(`Wierzchołek ${value} jest nieosiągalny ze startu ${run.start}.`)
       return
     }
     const path = pathFromParents(run.start, value, run.parents)
-    const distance = algorithm === 'dijkstra'
+    const distance = algorithm === 'dijkstra' || algorithm === 'bellman'
       ? distanceFromMap(value, run.distances)
       : path.length ? path.length - 1 : null
+    const kind = algorithm === 'bfs' ? 'Najkrótsza ścieżka (liczba krawędzi)' : 'Najkrótsza ścieżka wagowa'
     setNotice(
       path.length
-        ? `Wybrano cel ${value}. Najkrótsza / odtworzona ścieżka: ${path.join(' → ')}${distance !== null ? ` (koszt ${formatDistance(distance)})` : ''}.`
+        ? `${kind} do ${value}: ${path.join(' → ')}${distance !== null ? ` (koszt ${formatDistance(distance)})` : ''}. Bez ponownego uruchamiania algorytmu.`
         : `Brak ścieżki do ${value} w tablicy poprzedników.`,
     )
   }
@@ -355,8 +403,8 @@ export default function Algorithms() {
     }
   })
 
-  const targetOptions = run && algorithm !== 'bellman'
-    ? graph.vertices.filter(v => v === run.start || run.reachable.includes(v))
+  const targetOptions = run
+    ? graph.vertices.filter(v => v === run.start || run.reachable.includes(v) || algorithm === 'dfs')
     : graph.vertices
 
   return (
@@ -425,15 +473,24 @@ export default function Algorithms() {
               </select>
             </label>
             <label>
-              {algorithm === 'dijkstra' ? 'Cel najkrótszej ścieżki' : 'Cel ścieżki (z poprzedników)'}
+              {algorithm === 'dfs'
+                ? 'Cel w drzewie DFS (nie najkrótsza droga)'
+                : algorithm === 'bfs'
+                  ? 'Cel najkrótszej ścieżki (liczba krawędzi)'
+                  : 'Cel najkrótszej ścieżki'}
               <select value={end} onChange={e => changeEnd(e.target.value)}>
                 {targetOptions.map(vertex => <option key={vertex}>{vertex}</option>)}
               </select>
             </label>
-            {algorithm === 'dijkstra' && run && (
+            {run && !run.error && algorithm !== 'dfs' && (
               <p className="algo-note">
-                Po pełnej eksploracji możesz zmieniać cel wśród osiągalnych wierzchołków
-                bez ponownego uruchamiania algorytmu.
+                Po eksploracji możesz zmieniać cel (lista lub kliknięcie wierzchołka na grafie)
+                bez ponownego uruchamiania — ścieżka pochodzi z tablicy poprzedników.
+              </p>
+            )}
+            {algorithm === 'dfs' && (
+              <p className="algo-note">
+                DFS nie wyznacza najkrótszej drogi. Pokazujemy tylko drzewo przeszukiwania i kolejność odwiedzin.
               </p>
             )}
             <button className="algo-btn algo-primary" onClick={execute}>
@@ -445,6 +502,24 @@ export default function Algorithms() {
             <Link className="algo-btn" to="/editor">
               <ArrowLeft size={16} /> Edytuj ten graf
             </Link>
+            <GraphLibraryPanel
+              compact
+              currentGraph={null}
+              title="Biblioteka grafów"
+              onLoad={entry => {
+                saveWorkspace(entry.graph, { source: 'file', openInAlgorithms: true })
+                setDocument(workspaceToSaved(entry.graph))
+                setStart(entry.graph.start && entry.graph.nodes.some(n => n.id === entry.graph.start)
+                  ? entry.graph.start
+                  : entry.graph.nodes[0]?.id ?? '')
+                setEnd(entry.graph.end && entry.graph.nodes.some(n => n.id === entry.graph.end)
+                  ? entry.graph.end
+                  : entry.graph.nodes.at(-1)?.id ?? '')
+                setDemoId('custom')
+                setRun(null)
+                setNotice(`Wczytano z biblioteki: ${entry.name}.`)
+              }}
+            />
             <div className="algo-summary">
               <strong>Graf</strong>
               <span>{graph.vertices.length} wierzchołków</span>
@@ -464,9 +539,17 @@ export default function Algorithms() {
               <span><i className="algo-dot algo-dot-visited" /> odwiedzony</span>
               <span><i className="algo-dot algo-dot-path" /> ścieżka wyniku</span>
             </div>
+            <label className="algo-check">
+              <input
+                type="checkbox"
+                checked={showGraphCallouts}
+                onChange={e => setShowGraphCallouts(e.target.checked)}
+              />
+              <span>Pokazuj wyjaśnienia na grafie</span>
+            </label>
             <p className="algo-note">
               BFS/DFS: kolejność odwiedzin (bez wag). Dijkstra: wagi nieujemne. Bellman–Ford: także wagi ujemne i wykrywanie ujemnego cyklu.
-              Pętle i krawędzie równoległe są zablokowane w edytorze.
+              Pętle i krawędzie równoległe są zablokowane w edytorze. Okienka na grafie uzupełniają panel boczny.
             </p>
           </div>
         </section>
@@ -485,16 +568,27 @@ export default function Algorithms() {
               nodesDraggable={false}
               nodesConnectable={false}
               elementsSelectable={false}
+              onNodeClick={(_, node) => {
+                if (!run || !player.isLast) return
+                changeEnd(node.id)
+              }}
               proOptions={{ hideAttribution: true }}
             >
               <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#334155" />
               <Controls showInteractive={false} />
+              <GraphCalloutsOverlay callouts={graphCallouts} enabled={showGraphCallouts} />
             </ReactFlow>
           </div>
           <AlgorithmPlayer player={player} disabled={!run} />
           <div className="algo-message">
             <strong>{step?.title ?? 'Gotowe'}</strong>
             <span>{step?.message ?? notice}</span>
+            {step?.reason && (
+              <small className="algo-why"><b>Dlaczego?</b> {step.reason}</small>
+            )}
+            {step?.detail && (
+              <small className="algo-where">{step.detail}</small>
+            )}
           </div>
         </section>
 
@@ -513,8 +607,8 @@ export default function Algorithms() {
 
       <div className="algo-metrics">
         <div className="panel">
-          <small>Kroki animacji</small>
-          <strong>{run ? `${player.index + 1} / ${run.steps.length}` : '—'}</strong>
+          <small>Krok</small>
+          <strong>{run ? `${player.index + 1} z ${run.steps.length}` : '—'}</strong>
         </div>
         <div className="panel">
           <small>Analizowane krawędzie</small>
@@ -539,14 +633,69 @@ export default function Algorithms() {
       </div>
 
       <div className="panel algo-detail">
-        <h3>Wynik i kolejność odwiedzin</h3>
-        <p><b>Ścieżka do celu:</b> {displayPath.length ? displayPath.join(' → ') : 'Brak wyznaczonej trasy'}</p>
+        <h3>Wynik i odległości od źródła</h3>
+        <p>
+          <b>
+            {algorithm === 'dfs' ? 'Ścieżka w drzewie DFS:' : 'Ścieżka do celu:'}
+          </b>{' '}
+          {displayPath.length ? displayPath.join(' → ') : 'Brak wyznaczonej trasy'}
+          {displayDistance !== null ? ` (koszt ${formatDistance(displayDistance)})` : ''}
+        </p>
         <p><b>Kolejność odwiedzin:</b> {run?.order.join(' → ') || '—'}</p>
-        <p><b>Zbiór osiągalny:</b> {run?.reachable.join(', ') || '—'}</p>
+        <p>
+          <b>Osiągalne:</b> {run?.reachable.join(', ') || '—'}
+          {run && graph.vertices.some(v => v !== run.start && !run.reachable.includes(v)) && (
+            <>
+              {' · '}
+              <b>Nieosiągalne:</b>{' '}
+              {graph.vertices.filter(v => v !== run.start && !run.reachable.includes(v)).join(', ')}
+            </>
+          )}
+        </p>
+        {run && (
+          <div className="algo-table-wrap algo-result-table-wrap">
+            <table className="algo-state-table">
+              <thead>
+                <tr>
+                  <th>v</th>
+                  <th>{algorithm === 'bfs' ? 'd(v) krawędzie' : algorithm === 'dfs' ? 'koszt' : 'd(v)'}</th>
+                  <th>π(v)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultRows.map(row => (
+                  <tr
+                    key={row.id}
+                    className={`${row.isTarget ? 'is-current' : ''} ${!row.reachable ? 'is-unreachable' : ''}`}
+                  >
+                    <td>
+                      <button
+                        type="button"
+                        className="algo-vertex-pick"
+                        onClick={() => changeEnd(row.id)}
+                        disabled={!run || !!run.error}
+                        title="Ustaw jako cel i podświetl ścieżkę"
+                      >
+                        {row.id}
+                      </button>
+                    </td>
+                    <td>{row.cost}</td>
+                    <td>{row.parent}</td>
+                    <td>{row.reachable ? (row.isTarget ? 'cel' : 'osiągalny') : 'nieosiągalny'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
         <p className="algo-note">
-          Podany czas obejmuje wykonanie algorytmu edukacyjnego wraz z budową listy kroków wizualizacji
-          (`performance.now`), ale bez pauz odtwarzania. To nie jest czysty czas z modułu Eksperymenty
-          (tam Dijkstra używa kopca, a BFS/DFS nie zapisują kroków). Kroki animacji ≠ operacje benchmarku.
+          {algorithm === 'dfs'
+            ? 'DFS: kolumna kosztu jest celowo oznaczona jako n/d — algorytm nie rozwiązuje problemu najkrótszej drogi.'
+            : algorithm === 'bfs'
+              ? 'BFS: d(v) to liczba krawędzi na najkrótszej ścieżce nieważonej od źródła.'
+              : 'Dijkstra/Bellman–Ford: d(v) to najkrótszy koszt wagowy od źródła do wszystkich osiągalnych wierzchołków.'}
+          {' '}Czas obejmuje przygotowanie kroków wizualizacji — nie porównuj go z benchmarkiem w Eksperymentach.
         </p>
         <Link to="/editor" className="algo-editor-link">
           Wróć do edytora bez utraty danych <ArrowRight size={15} />

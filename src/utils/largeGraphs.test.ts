@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   algorithmLimit,
+  algorithmWeightLimit,
   estimateEdgeCount,
   generateBenchmarkGraph,
   generateLargeGraph,
@@ -84,9 +85,20 @@ describe('Generator dużych grafów', () => {
       topology: 'erdos', vertices: 100, densityPercent: 10, seed: 1, weightMin: 5, weightMax: 2, directed: false,
     }).ok).toBe(false)
 
+    expect(validateGeneratorParams({
+      topology: 'erdos', vertices: 100, densityPercent: 10, seed: 1, weightMin: -3, weightMax: 2, directed: true,
+    }).ok).toBe(true)
+
     expect(estimateEdgeCount({
       topology: 'path', vertices: 1000, densityPercent: 0, directed: false,
     })).toBe(999)
+  })
+
+  it('blokuje Dijkstrę przy ujemnym zakresie wag, a Bellmana–Forda nie', () => {
+    expect(algorithmWeightLimit('dijkstra', -1)).toMatch(/nie jest poprawną metodą/i)
+    expect(algorithmWeightLimit('bellman', -1)).toBeNull()
+    expect(algorithmWeightLimit('dijkstra', 0)).toBeNull()
+    expect(algorithmLimit('bellman', 100, 200)).toBeNull()
   })
 
   it('erdos z exact edgeCount respektuje docelową liczbę krawędzi', () => {

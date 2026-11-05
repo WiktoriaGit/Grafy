@@ -1,0 +1,59 @@
+.graph-callout{
+  max-width:min(240px,42vw);
+  padding:8px 10px;
+  border-radius:10px;
+  background:rgba(15,23,42,.94);
+  border:1px solid #475569;
+  box-shadow:0 10px 28px rgba(2,6,23,.45);
+  color:#e2e8f0;
+  font-size:11px;
+  line-height:1.45;
+  pointer-events:none;
+  z-index:5;
+  animation:graph-callout-in .18s ease-out;
+}
+.graph-callout strong{
+  display:block;
+  font-size:12px;
+  font-weight:700;
+  color:#f8fafc;
+  margin:2px 0 3px;
+}
+.graph-callout p{
+  margin:0;
+  color:#cbd5e1;
+}
+.graph-callout-badge{
+  display:inline-block;
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  padding:2px 6px;
+  border-radius:999px;
+  background:#1e293b;
+  color:#94a3b8;
+}
+.graph-callout-analyze{border-color:#6366f1}
+.graph-callout-analyze .graph-callout-badge{background:rgba(99,102,241,.2);color:#c7d2fe}
+.graph-callout-update{border-color:#34d399}
+.graph-callout-update .graph-callout-badge{background:rgba(52,211,153,.18);color:#a7f3d0}
+.graph-callout-skip{border-color:#fbbf24}
+.graph-callout-skip .graph-callout-badge{background:rgba(251,191,36,.16);color:#fde68a}
+.graph-callout-done{border-color:#38bdf8}
+.graph-callout-done .graph-callout-badge{background:rgba(56,189,248,.18);color:#bae6fd}
+.graph-callout-info{border-color:#64748b}
+
+@keyframes graph-callout-in{
+  from{opacity:0;transform:translateY(4px) scale(.98)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .graph-callout{animation:none}
+}
+
+@media (max-width:720px){
+  .graph-callout{max-width:min(200px,55vw);font-size:10px;padding:7px 8px}
+  .graph-callout strong{font-size:11px}
+}

@@ -94,6 +94,19 @@
 .algo-dot-visited { background: #3730a3; }
 .algo-dot-path { background: #059669; }
 
+.algo-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #dbe3f1;
+  margin: 4px 0;
+}
+.algo-check input {
+  accent-color: #818cf8;
+  width: 15px;
+  height: 15px;
+}
 .algo-note {
   font-size: 11px;
   color: #94a3b8;
@@ -652,3 +665,5 @@ a.algo-btn {
 @media (max-width: 520px) {
   .algo-metrics { grid-template-columns: 1fr; }
 }
+
+.algo-message .algo-why,.algo-message .algo-where{display:block;color:#94a3b8;font-size:12px;line-height:1.55;margin-top:4px}.algo-message .algo-why b,.algo-message .algo-where b{color:#c7d2fe}.algo-vertex-pick{background:transparent;border:0;color:#a5b4fc;font:inherit;font-weight:700;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}.algo-vertex-pick:disabled{cursor:default;text-decoration:none;color:#e2e8f0}.algo-result-table-wrap{margin:12px 0;max-height:280px;overflow:auto}.algo-state-table tr.is-unreachable td{color:#94a3b8;opacity:.75}

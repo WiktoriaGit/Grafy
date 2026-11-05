@@ -37,16 +37,19 @@ import {
 import { topologyLabels } from '../utils/largeGraphs'
 import './Results.css'
 
-const algorithms: AlgorithmId[] = ['bfs', 'dfs', 'dijkstra', 'bellman']
+const algorithms: AlgorithmId[] = ['bfs', 'dfs', 'dijkstra', 'bellman', 'prim', 'kruskal']
 const colors: Record<AlgorithmId, string> = {
   bfs: '#a5b4fc',
   dfs: '#34d399',
   dijkstra: '#38bdf8',
   bellman: '#fbbf24',
+  prim: '#f472b6',
+  kruskal: '#fb923c',
 }
 const format = (n: number) => n.toLocaleString('pl-PL', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 const valid = (r: BenchResult) =>
-  Number.isFinite(r.mean) && Number.isFinite(r.min) && Number.isFinite(r.max) && Number.isFinite(r.vertices)
+  (r.status ?? 'ran') === 'ran'
+  && Number.isFinite(r.mean) && Number.isFinite(r.min) && Number.isFinite(r.max) && Number.isFinite(r.vertices)
 
 export default function Results() {
   const [results, setResults] = useState<BenchResult[]>(() => loadResults().filter(valid))
@@ -155,7 +158,8 @@ export default function Results() {
           <div className="eyebrow"><BarChart3 size={14} /> DATA ANALYTICS</div>
           <h1>Wyniki i analiza</h1>
           <p>
-            Rzeczywiste pomiary z modułu eksperymentów. Dane lokalne: <code>localStorage / graphlab-benchmarks-v2</code>.
+            Dane pochodzą z Eksperymentów (lean-implementacje w <code>benchmark.ts</code>, nie z wizualizacji krokowej).
+            Magazyn lokalny: <code>localStorage / graphlab-benchmarks-v2</code>.
           </p>
         </div>
         <div className="heading-actions">
@@ -174,9 +178,9 @@ export default function Results() {
         <div className="panel-header"><h3>Jak czytać wyniki?</h3></div>
         <div className="results-edu-body">
           <p><b>Złożoność czasowa (Big O)</b> opisuje tempo wzrostu kosztu względem V i E — to model teoretyczny, nie dokładny czas w milisekundach.</p>
-          <p><b>Czas zmierzony</b> (`performance.now`) obejmuje lean-implementację w JS (JIT, cache, obciążenie CPU). Nie obejmuje animacji ani generowania grafu.</p>
+          <p><b>Czas zmierzony</b> (`performance.now`) obejmuje lean-implementację z <code>src/utils/benchmark.ts</code> w Web Workerze (JIT, cache, CPU). Nie obejmuje animacji ani generowania grafu.</p>
           <p><b>Odchylenie standardowe σ</b> liczymy jako pierwiastek ze średniej kwadratów odchyleń od średniej (wariancja populacyjna: dzielnik = liczba powtórzeń w serii, nie n−1).</p>
-          <p><b>Operacje benchmarku</b> to licznik w Web Workerze. <b>Kroki wizualizacji</b> to stany animacji w module Algorytmy/MST — to inne metryki.</p>
+          <p><b>Operacje benchmarku</b> to licznik w Workerze. <b>Kroki wizualizacji</b> pochodzą z instrumentowanych algorytmów edukacyjnych — innych plików i innego celu pomiaru.</p>
           <p>{COMPLEXITY_COMPARISON_NOTE}</p>
         </div>
       </section>

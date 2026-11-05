@@ -5,7 +5,7 @@ export const MAX_EDGES = 100000
 export type GraphSize = 100 | 400 | 1000 | 2000 | 5000 | 10000
 export const graphSizes: GraphSize[] = [100, 400, 1000, 2000, 5000, 10000]
 
-export type GraphTopology = 'erdos' | 'complete' | 'grid' | 'tree' | 'path' | 'cycle'
+export type GraphTopology = 'erdos' | 'complete' | 'grid' | 'tree' | 'path' | 'cycle' | 'custom'
 
 export const topologyLabels: Record<GraphTopology, string> = {
   erdos: 'Losowy (Erdős–Rényi, spójny)',
@@ -14,6 +14,7 @@ export const topologyLabels: Record<GraphTopology, string> = {
   tree: 'Drzewo',
   path: 'Ścieżka',
   cycle: 'Cykl',
+  custom: 'Własny (edytor / biblioteka)',
 }
 
 export type GeneratorParams = {
@@ -108,8 +109,8 @@ export function validateGeneratorParams(params: GeneratorParams): GeneratorValid
   if (!Number.isFinite(params.densityPercent) || params.densityPercent < 0 || params.densityPercent > 100) {
     return { ok: false, message: 'Gęstość musi mieścić się w zakresie 0–100%.' }
   }
-  if (!Number.isFinite(params.weightMin) || !Number.isFinite(params.weightMax) || params.weightMin < 0 || params.weightMax < params.weightMin) {
-    return { ok: false, message: 'Zakres wag musi spełniać 0 ≤ min ≤ max (benchmark używa wag nieujemnych).' }
+  if (!Number.isFinite(params.weightMin) || !Number.isFinite(params.weightMax) || params.weightMax < params.weightMin) {
+    return { ok: false, message: 'Zakres wag musi spełniać min ≤ max (liczby skończone). Ujemne wagi są dozwolone tylko dla Bellmana–Forda.' }
   }
   if (params.edgeCount != null && (!Number.isInteger(params.edgeCount) || params.edgeCount < 0)) {
     return { ok: false, message: 'Liczba krawędzi musi być nieujemną liczbą całkowitą.' }
@@ -305,11 +306,25 @@ export function generateLargeGraph(vertices: number, densityPercent: number, see
 
 /** Protects the UI from quadratic/cubic workloads in current benchmark implementations. */
 export function algorithmLimit(id: AlgorithmId, vertices: number, edges: number): string | null {
+  if ((id === 'bfs' || id === 'dfs') && (vertices > 10000 || edges > 100000)) {
+    return `${id.toUpperCase()}: przekroczono limit 10 000 wierzchołków lub 100 000 krawędzi.`
+  }
   if (id === 'dijkstra' && (vertices > 10000 || edges > 100000)) {
     return 'Dijkstra: przekroczono limit 10 000 wierzchołków lub 100 000 krawędzi.'
   }
   if (id === 'bellman' && (vertices > 1000 || edges > 25000)) {
     return 'Bellman–Ford: maksymalnie 1000 wierzchołków i 25 000 krawędzi.'
+  }
+  if ((id === 'prim' || id === 'kruskal') && (vertices > 10000 || edges > 100000)) {
+    return 'Prim/Kruskal: przekroczono limit 10 000 wierzchołków lub 100 000 krawędzi.'
+  }
+  return null
+}
+
+/** Dijkstra is not a correct method when negative edge weights are present. */
+export function algorithmWeightLimit(id: AlgorithmId, weightMin: number): string | null {
+  if (id === 'dijkstra' && weightMin < 0) {
+    return 'Dijkstra nie jest poprawną metodą przy ujemnych wagach — odznacz Dijkstrę albo ustaw wagę min ≥ 0 (Bellman–Ford obsługuje ujemne wagi).'
   }
   return null
 }

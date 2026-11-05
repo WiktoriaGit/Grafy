@@ -37,6 +37,7 @@ import {
 import { generateRandomGraph, sampleGraph, type GraphDocument } from '../utils/graphData'
 import { DEMO_GRAPHS } from '../utils/demoGraphs'
 import { getSavedGraphs, getSavedGraph, saveGraph, deleteSavedGraph, type SavedGraphInfo } from '../services/graphApi'
+import GraphLibraryPanel from '../components/GraphLibraryPanel'
 import {
   autoLayoutPositions,
   decorateEdge,
@@ -653,10 +654,20 @@ export default function GraphEditor() {
               <RotateCcw size={16} /> Odśwież listę
             </button>
 
-            <div className="tool-group-title">PLIKI I ZAPIS LOKALNY</div>
+            <div className="tool-group-title">BIBLIOTEKA GRAFÓW (LOKALNA)</div>
+            <GraphLibraryPanel
+              currentGraph={serializeWorkspace(nodes, edges, directed, start || nodes[0]?.id, end || nodes.at(-1)?.id)}
+              onLoad={entry => {
+                loadGraph(workspaceToFlow(entry.graph), `Wczytano z biblioteki: ${entry.name}.`)
+                if (entry.graph.start) setStart(entry.graph.start)
+                if (entry.graph.end) setEnd(entry.graph.end)
+              }}
+            />
+
+            <div className="tool-group-title">PLIKI I OBSZAR ROBOCZY</div>
             <div className="ge-actions-two">
-              <button className="ge-action" onClick={save}><Save size={16} /> Zapisz</button>
-              <button className="ge-action" onClick={restore}><FileUp size={16} /> Wczytaj</button>
+              <button className="ge-action" onClick={save}><Save size={16} /> Zapisz workspace</button>
+              <button className="ge-action" onClick={restore}><FileUp size={16} /> Wczytaj workspace</button>
             </div>
             <div className="ge-actions-two">
               <button className="ge-action" onClick={exportJson}><Download size={16} /> Eksport</button>

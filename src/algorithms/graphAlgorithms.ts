@@ -182,7 +182,7 @@ function runSearch(
   const updateLine = 6
 
   capture({
-    current: null,
+    current: start,
     event: 'init',
     pseudoLine: 1,
     title: `Inicjalizacja ${label}`,
@@ -191,6 +191,7 @@ function runSearch(
       algorithm === 'bfs'
         ? `BFS przeszukuje graf warstwami. ${start} jest jedynym odkrytym wierzchołkiem i stoi na początku kolejki FIFO. Algorytm będzie kontynuowany, aż kolejka się opróżni — dzięki temu odwiedzimy wszystkie osiągalne wierzchołki, nie tylko cel.`
         : `DFS wchodzi jak najgłębiej w graf. ${start} trafia na stos LIFO. Algorytm działa do wyczerpania stosu, więc eksploruje cały zbiór osiągalny ze startu.`,
+    reason: `${start} jest źródłem przeszukiwania.`,
   })
 
   while (frontier.length) {
@@ -346,12 +347,13 @@ function runDijkstra(graph: Graph, start: string, end: string): Omit<Run, 'durat
   }
 
   capture({
-    current: null,
+    current: start,
     event: 'init',
     pseudoLine: 1,
     title: 'Inicjalizacja Dijkstry',
     message: `Ustawiono d(${start}) = 0, pozostałe odległości = ∞.`,
     detail: `Dijkstra wyznacza najkrótsze ścieżki wagowe od ${start} do wszystkich osiągalnych wierzchołków. Na początku tylko start ma skończoną odległość. Algorytm nie kończy się po znalezieniu jednego celu — domyka pełną eksplorację.`,
+    reason: `Zaczynamy od źródła ${start}: odległość do siebie wynosi 0.`,
   })
 
   while (true) {
