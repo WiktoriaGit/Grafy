@@ -51,21 +51,38 @@ import {
 import { listLibraryGraphs, getLibraryGraph } from '../library/graphLibrary'
 import { loadWorkspace } from '../workspace/graphWorkspace'
 import { saveExperimentsBestEffort } from '../services/graphApi'
+import { persistBenchResultsLocal } from '../services/persistence'
 import GraphLibraryPanel from '../components/GraphLibraryPanel'
+import ResearchStudyPanel from '../components/ResearchStudyPanel'
 import './Experiments.css'
 
 type GraphSource = 'generator' | 'editor' | 'library'
 type SelectMode = 'pair' | 'multi' | 'all'
+type ExperimentsMode = 'single' | 'research'
 
 const fmt = (n: number) => n.toLocaleString('pl-PL', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 const OPERATIONS_HINT =
   'Operacje benchmarku: licznik wewnętrznych przejść/relaksacji w lean-implementacji Web Workera (nie kroki animacji).'
 
-const topologies: GraphTopology[] = ['erdos', 'complete', 'grid', 'tree', 'path', 'cycle']
+const topologies: GraphTopology[] = [
+  'erdos',
+  'sparse',
+  'dense',
+  'complete',
+  'bipartite',
+  'completeBipartite',
+  'grid',
+  'tree',
+  'path',
+  'cycle',
+]
 
 export default function Experiments() {
   const location = useLocation()
   const scenarioSizes = new URLSearchParams(location.search).get('scenario') === 'sizes'
+  const [experimentsMode, setExperimentsMode] = useState<ExperimentsMode>(
+    new URLSearchParams(location.search).get('mode') === 'research' ? 'research' : 'single',
+  )
   const [topology, setTopology] = useState<GraphTopology>(scenarioSizes ? 'path' : 'erdos')
   const [vertices, setVertices] = useState(1000)
   const [seed, setSeed] = useState(12345)
@@ -251,12 +268,11 @@ export default function Experiments() {
       if (message.type === 'complete') {
         const next = message.results || []
         setLastBatch(next)
-        setResults(previous => {
-          const all = [...next, ...previous].slice(0, 200)
-          saveResults(all)
-          return all
-        })
+        persistBenchResultsLocal(next)
+        setResults(previous => [...next, ...previous].slice(0, 200))
         void saveExperimentsBestEffort(next.filter(r => (r.status ?? 'ran') === 'ran').map(r => ({
+          clientId: r.id,
+          runId: r.runId ?? null,
           algorithm: r.algorithm,
           vertexCount: r.vertices,
           edgeCount: r.edges,
@@ -266,7 +282,18 @@ export default function Experiments() {
           meanMs: r.mean,
           minMs: r.min,
           maxMs: r.max,
+          medianMs: r.median,
+          stdMs: r.stdDev,
           operations: r.operations,
+          topology: r.topology,
+          status: r.status ?? 'ran',
+          sourceLabel: r.sourceLabel ?? null,
+          directed: r.directed,
+          weightMin: r.weightMin,
+          weightMax: r.weightMax,
+          generateMs: r.generateMs,
+          payload: r as unknown as Record<string, unknown>,
+          updatedAt: r.timestamp,
         }))).then(info => setStorageNote(info.message))
 
         if (mode === 'pair') {
@@ -380,6 +407,34 @@ export default function Experiments() {
         </div>
       </div>
 
+      <div className="bench-mode-switch" role="tablist" aria-label="Tryb eksperymentów">
+        <button
+          type="button"
+          className={experimentsMode === 'single' ? 'is-active' : ''}
+          onClick={() => setExperimentsMode('single')}
+        >
+          Pojedynczy eksperyment
+        </button>
+        <button
+          type="button"
+          className={experimentsMode === 'research' ? 'is-active' : ''}
+          onClick={() => setExperimentsMode('research')}
+        >
+          Badania porównawcze
+        </button>
+      </div>
+
+      {experimentsMode === 'research' ? (
+        <ResearchStudyPanel
+          onAppendBenchResults={rows => {
+            persistBenchResultsLocal(rows)
+            setResults(previous => [...rows, ...previous].slice(0, 200))
+          }}
+        />
+      ) : null}
+
+      {experimentsMode === 'single' ? (
+      <>
       <div className="bench-grid">
         <section className="panel bench-controls">
           <div className="panel-header"><h3><Network size={18} /> Konfiguracja</h3></div>
@@ -805,6 +860,8 @@ export default function Experiments() {
           </div>
         </section>
       )}
+      </>
+      ) : null}
 
       <section className="panel bench-history">
         <div className="panel-header">

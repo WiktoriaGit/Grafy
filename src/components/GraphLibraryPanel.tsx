@@ -21,6 +21,7 @@ import {
   saveLibraryGraph,
   type LibraryGraph,
 } from '../library/graphLibrary'
+import { persistLibraryGraphLocal } from '../services/persistence'
 import { saveWorkspace, type WorkspaceGraph } from '../workspace/graphWorkspace'
 import './GraphLibraryPanel.css'
 
@@ -51,7 +52,7 @@ export default function GraphLibraryPanel({
   const [entries, setEntries] = useState<LibraryGraph[]>(() => listLibraryGraphs())
   const [selectedId, setSelectedId] = useState('')
   const [name, setName] = useState('')
-  const [status, setStatus] = useState('Grafy lokalne (localStorage) — przetrwają odświeżenie strony.')
+  const [status, setStatus] = useState('Biblioteka: localStorage + synchronizacja z SQLite (gdy API :3001 działa).')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const refresh = () => {
@@ -73,10 +74,11 @@ export default function GraphLibraryPanel({
     }
     try {
       const entry = saveLibraryGraph(name || `Graf ${entries.length + 1}`, currentGraph)
+      persistLibraryGraphLocal(entry)
       setName(entry.name)
       setSelectedId(entry.id)
       refresh()
-      setStatus(`Zapisano „${entry.name}” w bibliotece.`)
+      setStatus(`Zapisano „${entry.name}” lokalnie; synchronizacja z SQLite w tle.`)
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Nie udało się zapisać.')
     }
@@ -90,9 +92,10 @@ export default function GraphLibraryPanel({
     if (!window.confirm(`Nadpisać „${selected?.name ?? selectedId}” bieżącym grafem?`)) return
     try {
       const entry = saveLibraryGraph(name || selected?.name || 'Graf', currentGraph, selectedId)
+      persistLibraryGraphLocal(entry)
       setSelectedId(entry.id)
       refresh()
-      setStatus(`Nadpisano „${entry.name}”.`)
+      setStatus(`Nadpisano „${entry.name}” lokalnie; synchronizacja z SQLite w tle.`)
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Nie udało się nadpisać.')
     }

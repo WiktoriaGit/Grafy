@@ -1,32 +1,47 @@
-# React + TypeScript + Vite
+# GraphLab
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Interaktywna wizualizacja i analiza algorytmów grafowych (praca inżynierska).
 
-Currently, two official plugins are available:
+## Uruchomienie
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+cd "C:\Users\wikaf\OneDrive\Desktop\graphlab"
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Aplikacja: [http://localhost:5173](http://localhost:5173)
+
+## Testy i build
+
+```powershell
+npm test
+npm run build
+```
+
+## Eksperymenty i badania porównawcze
+
+W zakładce **Eksperymenty** dostępne są dwa tryby:
+
+1. **Pojedynczy eksperyment** — dotychczasowy benchmark (generator / edytor / biblioteka).
+2. **Badania porównawcze** — automatyczne serie A–D pod kątem pracy inżynierskiej.
+
+Bezpośredni link do trybu badawczego:
+
+`http://localhost:5173/experiments?mode=research`
+
+### Przykładowa seria
+
+1. Wejdź w **Eksperymenty → Badania porównawcze**.
+2. Wybierz badanie A (wpływ liczby wierzchołków).
+3. Grupa: najkrótsze ścieżki (Dijkstra vs Bellman–Ford).
+4. Topologia: Erdős–Rényi, V = `100, 400, 800, 1000`, powtórzenia 5, seed `12345`.
+5. Hipoteza H2 → **Uruchom serię**.
+6. Eksportuj CSV/JSON do dokumentacji.
+
+### Ograniczenia wydajnościowe
+
+- V ≤ 10 000, E ≤ 100 000
+- Graf pełny ≤ 450 V
+- Graf pełny dwudzielny ≤ 600 V
+- Bellman–Ford ≤ 1000 V / 25 000 E (kosztowne przypadki są ostrzegane lub pomijane)

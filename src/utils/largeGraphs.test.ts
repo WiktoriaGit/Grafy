@@ -44,7 +44,7 @@ describe('Generator dużych grafów', () => {
     expect(algorithmLimit('bfs', 10000, 100000)).toBeNull()
   })
 
-  it('generuje ścieżkę, cykl, drzewo, siatkę i graf pełny', () => {
+  it('generuje ścieżkę, cykl, drzewo, siatkę, graf pełny oraz warianty badawcze', () => {
     const path = generateBenchmarkGraph({
       topology: 'path', vertices: 50, densityPercent: 0, seed: 1, weightMin: 1, weightMax: 5, directed: false,
     })
@@ -70,6 +70,14 @@ describe('Generator dużych grafów', () => {
       topology: 'complete', vertices: 20, densityPercent: 100, seed: 5, weightMin: 1, weightMax: 3, directed: false,
     })
     expect(complete.edges).toHaveLength(20 * 19 / 2)
+
+    const sparse = generateBenchmarkGraph({
+      topology: 'sparse', vertices: 50, densityPercent: 90, seed: 6, weightMin: 1, weightMax: 3, directed: false,
+    })
+    const dense = generateBenchmarkGraph({
+      topology: 'dense', vertices: 50, densityPercent: 1, seed: 6, weightMin: 1, weightMax: 3, directed: false,
+    })
+    expect(dense.edges.length).toBeGreaterThan(sparse.edges.length)
   })
 
   it('waliduje limity pamięci i parametrów', () => {

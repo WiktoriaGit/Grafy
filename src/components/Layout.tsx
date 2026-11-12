@@ -1,5 +1,4 @@
-
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   Activity,
@@ -14,8 +13,16 @@ import {
   Menu,
   Network,
   PanelLeftClose,
+  RefreshCw,
   X,
 } from 'lucide-react'
+import {
+  getConnectionStatus,
+  startPersistenceLayer,
+  subscribeConnectionStatus,
+  syncAll,
+  type ConnectionStatus,
+} from '../services/persistence'
 
 const navigation = [
   { to: '/', label: 'Panel główny', icon: LayoutDashboard, end: true },
@@ -37,11 +44,28 @@ const titles: Record<string, string> = {
   '/mst': 'Prim i Kruskal',
 }
 
+const statusLabel: Record<ConnectionStatus, string> = {
+  online: 'Połączono',
+  offline: 'Offline',
+  syncing: 'Synchronizacja',
+  error: 'Błąd',
+}
+
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [dbStatus, setDbStatus] = useState<ConnectionStatus>(() => getConnectionStatus().status)
+  const [dbDetail, setDbDetail] = useState(() => getConnectionStatus().detail)
   const location = useLocation()
   const title = titles[location.pathname] ?? 'GraphLab'
+
+  useEffect(() => {
+    startPersistenceLayer()
+    return subscribeConnectionStatus((status, detail) => {
+      setDbStatus(status)
+      if (detail) setDbDetail(detail)
+    })
+  }, [])
 
   return (
     <div className="app-shell">
@@ -121,10 +145,16 @@ export default function Layout() {
           </div>
 
           <div className="topbar-right">
-            <div className="topbar-status">
+            <button
+              type="button"
+              className={`topbar-status db-status db-status-${dbStatus}`}
+              title={dbDetail}
+              onClick={() => { void syncAll() }}
+            >
               <span className="status-dot" />
-              Środowisko lokalne
-            </div>
+              Baza: {statusLabel[dbStatus]}
+              <RefreshCw size={13} />
+            </button>
             <div className="topbar-divider" />
             <div className="avatar">GL</div>
           </div>

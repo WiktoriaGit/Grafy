@@ -5,17 +5,49 @@ export const MAX_EDGES = 100000
 export type GraphSize = 100 | 400 | 1000 | 2000 | 5000 | 10000
 export const graphSizes: GraphSize[] = [100, 400, 1000, 2000, 5000, 10000]
 
-export type GraphTopology = 'erdos' | 'complete' | 'grid' | 'tree' | 'path' | 'cycle' | 'custom'
+export type GraphTopology =
+  | 'erdos'
+  | 'sparse'
+  | 'dense'
+  | 'complete'
+  | 'bipartite'
+  | 'completeBipartite'
+  | 'grid'
+  | 'tree'
+  | 'path'
+  | 'cycle'
+  | 'custom'
 
 export const topologyLabels: Record<GraphTopology, string> = {
   erdos: 'Losowy (Erdős–Rényi, spójny)',
+  sparse: 'Graf spójny rzadki',
+  dense: 'Graf spójny gęsty',
   complete: 'Graf pełny',
+  bipartite: 'Graf dwudzielny (losowy, spójny)',
+  completeBipartite: 'Graf pełny dwudzielny',
   grid: 'Siatka',
-  tree: 'Drzewo',
-  path: 'Ścieżka',
-  cycle: 'Cykl',
+  tree: 'Drzewo (drzewiasty)',
+  path: 'Graf ścieżkowy',
+  cycle: 'Graf cykliczny',
   custom: 'Własny (edytor / biblioteka)',
 }
+
+/** Topologie dostępne w badaniach porównawczych (bez custom). */
+export const RESEARCH_TOPOLOGIES: GraphTopology[] = [
+  'erdos',
+  'sparse',
+  'dense',
+  'complete',
+  'bipartite',
+  'completeBipartite',
+  'path',
+  'cycle',
+  'tree',
+]
+
+export const SPARSE_DENSITY_PERCENT = 5
+export const DENSE_DENSITY_PERCENT = 45
+export const MAX_COMPLETE_BIPARTITE_VERTICES = 600
 
 export type GeneratorParams = {
   topology: GraphTopology
@@ -72,6 +104,12 @@ function randomWeight(random: () => number, min: number, max: number) {
   return min + Math.floor(random() * (max - min + 1))
 }
 
+function bipartiteParts(n: number): { left: number; right: number } {
+  const left = Math.floor(n / 2)
+  const right = n - left
+  return { left, right }
+}
+
 export function estimateEdgeCount(params: Pick<GeneratorParams, 'topology' | 'vertices' | 'densityPercent' | 'edgeCount' | 'directed' | 'edgeLimit'>): number {
   const n = params.vertices
   const limit = params.edgeLimit ?? MAX_EDGES
@@ -82,6 +120,11 @@ export function estimateEdgeCount(params: Pick<GeneratorParams, 'topology' | 've
     const full = params.directed ? n * (n - 1) : n * (n - 1) / 2
     return Math.min(limit, full)
   }
+  if (params.topology === 'completeBipartite') {
+    const { left, right } = bipartiteParts(n)
+    const full = params.directed ? left * right * 2 : left * right
+    return Math.min(limit, full)
+  }
   if (params.topology === 'grid') {
     const cols = Math.max(1, Math.ceil(Math.sqrt(n)))
     const rows = Math.max(1, Math.ceil(n / cols))
@@ -90,12 +133,27 @@ export function estimateEdgeCount(params: Pick<GeneratorParams, 'topology' | 've
     const capped = Math.min(n * n, undirectedApprox)
     return Math.min(limit, params.directed ? capped * 2 : capped)
   }
-  // erdos
+  // erdos / sparse / dense / bipartite
+  const density = params.topology === 'sparse'
+    ? SPARSE_DENSITY_PERCENT
+    : params.topology === 'dense'
+      ? DENSE_DENSITY_PERCENT
+      : params.densityPercent
+  if (params.topology === 'bipartite') {
+    const { left, right } = bipartiteParts(n)
+    const possible = params.directed ? left * right * 2 : left * right
+    const minEdges = params.directed ? Math.max(0, n - 1) : Math.max(0, n - 1)
+    if (params.edgeCount != null && Number.isFinite(params.edgeCount)) {
+      return Math.min(limit, possible, Math.max(minEdges, Math.floor(params.edgeCount)))
+    }
+    const desired = Math.max(minEdges, Math.round(possible * density / 100))
+    return Math.min(limit, possible, desired)
+  }
   const possible = params.directed ? n * (n - 1) : n * (n - 1) / 2
   if (params.edgeCount != null && Number.isFinite(params.edgeCount)) {
     return Math.min(limit, possible, Math.max(params.directed ? 0 : Math.max(0, n - 1), Math.floor(params.edgeCount)))
   }
-  const desired = Math.max(params.directed ? 0 : Math.max(0, n - 1), Math.round(possible * params.densityPercent / 100))
+  const desired = Math.max(params.directed ? 0 : Math.max(0, n - 1), Math.round(possible * density / 100))
   return Math.min(limit, possible, desired)
 }
 
@@ -118,8 +176,20 @@ export function validateGeneratorParams(params: GeneratorParams): GeneratorValid
   if (params.topology === 'cycle' && params.vertices < 3) {
     return { ok: false, message: 'Graf cykliczny wymaga co najmniej 3 wierzchołków.' }
   }
+  if ((params.topology === 'bipartite' || params.topology === 'completeBipartite') && params.vertices < 2) {
+    return { ok: false, message: 'Graf dwudzielny wymaga co najmniej 2 wierzchołków.' }
+  }
   if (params.topology === 'complete' && params.vertices > 450) {
     return { ok: false, message: 'Graf pełny jest ograniczony do 450 wierzchołków ze względu na liczbę krawędzi i pamięć.' }
+  }
+  if (params.topology === 'completeBipartite' && params.vertices > MAX_COMPLETE_BIPARTITE_VERTICES) {
+    return {
+      ok: false,
+      message: `Graf pełny dwudzielny jest ograniczony do ${MAX_COMPLETE_BIPARTITE_VERTICES} wierzchołków (E ≈ V²/4).`,
+    }
+  }
+  if ((params.topology === 'sparse' || params.topology === 'dense') && params.directed) {
+    return { ok: false, message: 'Warianty rzadki/gęsty w badaniach są zdefiniowane dla grafów nieskierowanych.' }
   }
   const edges = estimateEdgeCount(params)
   if (edges > MAX_EDGES) {
@@ -269,6 +339,123 @@ function generateCycle(params: GeneratorParams): BenchGraph {
   return graph
 }
 
+function generateBipartite(params: GeneratorParams): BenchGraph {
+  const { vertices, seed, weightMin, weightMax, directed } = params
+  const { left, right } = bipartiteParts(vertices)
+  const target = estimateEdgeCount(params)
+  const random = createRng(seed)
+  const graph = emptyGraph(vertices)
+  const seen = new Set<number>()
+  const weight = () => randomWeight(random, weightMin, weightMax)
+  const leftOf = (i: number) => i
+  const rightOf = (j: number) => left + j
+
+  // Spanning connections between partitions to keep the graph connected (undirected)
+  // or weakly linked for directed research graphs.
+  for (let i = 0; i < left; i++) {
+    const j = i % right
+    addEdge(graph, leftOf(i), rightOf(j), weight(), directed, seen, vertices)
+  }
+  for (let j = 0; j < right; j++) {
+    const i = j % left
+    addEdge(graph, leftOf(i), rightOf(j), weight(), directed, seen, vertices)
+  }
+
+  let attempts = 0
+  const attemptLimit = Math.max(1000, target * 30)
+  while (graph.edges.length < target && attempts++ < attemptLimit) {
+    const a = leftOf(Math.floor(random() * left))
+    const b = rightOf(Math.floor(random() * right))
+    if (directed && random() < 0.5) addEdge(graph, b, a, weight(), true, seen, vertices)
+    else addEdge(graph, a, b, weight(), directed, seen, vertices)
+  }
+
+  if (graph.edges.length < target) {
+    for (let i = 0; i < left && graph.edges.length < target; i++) {
+      for (let j = 0; j < right && graph.edges.length < target; j++) {
+        addEdge(graph, leftOf(i), rightOf(j), weight(), directed, seen, vertices)
+        if (directed && graph.edges.length < target) {
+          addEdge(graph, rightOf(j), leftOf(i), weight(), true, seen, vertices)
+        }
+      }
+    }
+  }
+  return graph
+}
+
+function generateCompleteBipartite(params: GeneratorParams): BenchGraph {
+  const { vertices, seed, weightMin, weightMax, directed } = params
+  const { left, right } = bipartiteParts(vertices)
+  const random = createRng(seed)
+  const graph = emptyGraph(vertices)
+  const seen = new Set<number>()
+  const limit = params.edgeLimit ?? MAX_EDGES
+  for (let i = 0; i < left; i++) {
+    for (let j = 0; j < right; j++) {
+      if (graph.edges.length >= limit) return graph
+      addEdge(
+        graph,
+        i,
+        left + j,
+        randomWeight(random, weightMin, weightMax),
+        directed,
+        seen,
+        vertices,
+      )
+      if (directed) {
+        if (graph.edges.length >= limit) return graph
+        addEdge(
+          graph,
+          left + j,
+          i,
+          randomWeight(random, weightMin, weightMax),
+          true,
+          seen,
+          vertices,
+        )
+      }
+    }
+  }
+  return graph
+}
+
+/** BFS connectivity on the undirected view of the graph (ignores edge direction). */
+export function isConnectedUndirectedView(graph: BenchGraph): boolean {
+  const n = graph.adjacency.length
+  if (n === 0) return true
+  const undirected: number[][] = Array.from({ length: n }, () => [])
+  for (let from = 0; from < n; from++) {
+    for (const edge of graph.adjacency[from]) {
+      undirected[from].push(edge.to)
+      undirected[edge.to].push(from)
+    }
+  }
+  const seen = new Uint8Array(n)
+  const queue = [0]
+  seen[0] = 1
+  for (let head = 0; head < queue.length; head++) {
+    for (const to of undirected[queue[head]]) {
+      if (!seen[to]) {
+        seen[to] = 1
+        queue.push(to)
+      }
+    }
+  }
+  return queue.length === n
+}
+
+/** True when every edge goes between the two halves [0..left) and [left..n). */
+export function isBipartitePartitioned(graph: BenchGraph, leftSize?: number): boolean {
+  const n = graph.adjacency.length
+  const left = leftSize ?? Math.floor(n / 2)
+  for (const edge of graph.edges) {
+    const aLeft = edge.from < left
+    const bLeft = edge.to < left
+    if (aLeft === bLeft) return false
+  }
+  return true
+}
+
 export function generateBenchmarkGraph(params: GeneratorParams): BenchGraph {
   const validation = validateGeneratorParams(params)
   if (!validation.ok) throw new Error(validation.message)
@@ -276,6 +463,14 @@ export function generateBenchmarkGraph(params: GeneratorParams): BenchGraph {
   switch (params.topology) {
     case 'complete':
       return generateComplete(params)
+    case 'completeBipartite':
+      return generateCompleteBipartite(params)
+    case 'bipartite':
+      return generateBipartite(params)
+    case 'sparse':
+      return generateErdos({ ...params, densityPercent: SPARSE_DENSITY_PERCENT, edgeCount: undefined })
+    case 'dense':
+      return generateErdos({ ...params, densityPercent: DENSE_DENSITY_PERCENT, edgeCount: undefined })
     case 'grid':
       return generateGrid(params)
     case 'tree':

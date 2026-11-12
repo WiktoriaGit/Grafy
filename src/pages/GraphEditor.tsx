@@ -36,7 +36,7 @@ import {
 } from 'lucide-react'
 import { generateRandomGraph, sampleGraph, type GraphDocument } from '../utils/graphData'
 import { DEMO_GRAPHS } from '../utils/demoGraphs'
-import { getSavedGraphs, getSavedGraph, saveGraph, deleteSavedGraph, type SavedGraphInfo } from '../services/graphApi'
+import { getSavedGraphs, getSavedGraph, saveGraph, updateGraph, deleteSavedGraph, type SavedGraphInfo } from '../services/graphApi'
 import GraphLibraryPanel from '../components/GraphLibraryPanel'
 import {
   autoLayoutPositions,
@@ -198,9 +198,11 @@ export default function GraphEditor() {
     if (!name) { setMessage('Wpisz nazwę grafu'); return }
     setDbBusy(true)
     try {
-      const result = await saveGraph({
+      const payload = {
         name,
         directed,
+        updatedAt: new Date().toISOString(),
+        origin: 'editor' as const,
         nodes: nodes.map(n => ({ id: n.id, position: n.position, data: { label: n.id } })),
         edges: edges.map(e => ({
           id: e.id,
@@ -209,11 +211,20 @@ export default function GraphEditor() {
           label: String(e.label ?? 1),
           data: { weight: Number(e.label ?? 1) },
         })),
-      })
-      await refreshSavedGraphs()
-      setSavedGraphId(String(result.id))
-      persistLocal()
-      setMessage(`Zapisano graf „${name}” w bazie SQLite (ID: ${result.id})`)
+      }
+      const existingId = savedGraphId ? Number(savedGraphId) : NaN
+      if (Number.isFinite(existingId) && existingId > 0) {
+        const result = await updateGraph(existingId, payload)
+        await refreshSavedGraphs()
+        persistLocal()
+        setMessage(`Zaktualizowano graf „${name}” w SQLite (ID: ${result.id})`)
+      } else {
+        const result = await saveGraph(payload)
+        await refreshSavedGraphs()
+        setSavedGraphId(String(result.id))
+        persistLocal()
+        setMessage(`Zapisano nowy graf „${name}” w SQLite (ID: ${result.id})`)
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Błąd zapisu grafu')
     } finally {

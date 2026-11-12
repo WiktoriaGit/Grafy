@@ -1,9 +1,11 @@
-
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { startPersistenceLayer } from './services/persistence'
 import './index.css'
 import '@xyflow/react/dist/style.css'
+
+startPersistenceLayer()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
