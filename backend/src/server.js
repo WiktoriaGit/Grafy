@@ -24,8 +24,9 @@ const experimentSchema = z.object({
   algorithm: z.enum(['bfs', 'dfs', 'dijkstra', 'bellman', 'prim', 'kruskal']),
   vertexCount: z.number().int().min(1),
   edgeCount: z.number().int().min(0),
-  density: z.number().min(0).max(100),
-  repetitions: z.number().int().min(1),
+  // density/repetitions: przyjmujemy szerszy zakres wejścia, potem normalizujemy (bez utraty pomiaru).
+  density: z.number().finite(),
+  repetitions: z.number().int().min(0),
   seed: z.number().int().nullable().optional(),
   meanMs: z.number().finite().min(0),
   minMs: z.number().finite().min(0),
@@ -42,6 +43,15 @@ const experimentSchema = z.object({
   generateMs: z.number().finite().min(0).nullable().optional(),
   payload: z.record(z.string(), z.unknown()).nullable().optional(),
   updatedAt: z.string().optional(),
+}).transform((x) => {
+  const meanMs = x.meanMs;
+  return {
+    ...x,
+    density: Math.min(100, Math.max(0, x.density)),
+    repetitions: Math.max(1, x.repetitions),
+    minMs: Math.min(x.minMs, meanMs),
+    maxMs: Math.max(x.maxMs, meanMs),
+  };
 }).refine(x => x.minMs <= x.meanMs && x.meanMs <= x.maxMs, { message: 'Niespójne statystyki czasu' });
 
 const researchStudySchema = z.object({

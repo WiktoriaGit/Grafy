@@ -4,7 +4,7 @@
  */
 import type { Edge, Node } from '@xyflow/react'
 import type { BenchResult } from '../utils/benchmark'
-import { STORAGE_KEY, loadResults, saveResults } from '../utils/benchmark'
+import { loadResults, saveResults } from '../utils/benchmark'
 import {
   LIBRARY_KEY,
   listLibraryGraphs,
@@ -15,7 +15,7 @@ import {
   saveResearchStudy,
   type ResearchStudy,
 } from '../utils/researchStudy'
-import { loadWorkspace, saveWorkspace, type WorkspaceGraph } from '../workspace/graphWorkspace'
+import { saveWorkspace, type WorkspaceGraph } from '../workspace/graphWorkspace'
 import {
   checkApiHealth,
   deleteResearchStudyApi,
@@ -32,6 +32,10 @@ import {
   type GraphToSave,
   type SavedGraph,
 } from './graphApi'
+import {
+  isPermanentSyncRejection,
+  normalizeExperimentToSave,
+} from './experimentPayload'
 
 export type ConnectionStatus = 'online' | 'offline' | 'syncing' | 'error'
 
@@ -52,6 +56,8 @@ export type SyncReport = {
 }
 
 const QUEUE_KEY = 'graphlab-sync-queue-v1'
+/** Kopie pozycji trwale odrzuconych (np. 400) — nie usuwa danych bez kopii. */
+const QUARANTINE_KEY = 'graphlab-sync-quarantine-v1'
 const STATUS_EVENT = 'graphlab-connection-status'
 const LAST_SYNC_KEY = 'graphlab-last-sync-v1'
 
@@ -70,10 +76,12 @@ export function getConnectionStatus() {
   return { status: currentStatus, detail: currentDetail }
 }
 
-export function subscribeConnectionStatus(listener: StatusListener) {
+export function subscribeConnectionStatus(listener: StatusListener): () => void {
   listeners.add(listener)
   listener(currentStatus, currentDetail)
-  return () => listeners.delete(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
 function setStatus(status: ConnectionStatus, detail: string) {
@@ -102,6 +110,36 @@ function enqueue(item: QueueItem) {
   const queue = readQueue().filter(q => !(q.entity === item.entity && q.id === item.id && q.op === item.op))
   queue.push(item)
   writeQueue(queue)
+}
+
+function quarantineItem(
+  item: QueueItem,
+  reason: string,
+  httpStatus?: number,
+  extra?: Record<string, unknown>,
+) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(QUARANTINE_KEY) || '[]')
+    const list = Array.isArray(raw) ? raw : []
+    list.push({
+      quarantinedAt: new Date().toISOString(),
+      reason,
+      httpStatus: httpStatus ?? null,
+      item,
+      ...extra,
+    })
+    localStorage.setItem(QUARANTINE_KEY, JSON.stringify(list.slice(-200)))
+  } catch {
+    // Nie blokuj sync przy awarii kwarantanny — kolejka i tak nie wchłonie pozycji 400.
+  }
+}
+
+function httpStatusOf(error: unknown): number | undefined {
+  if (error && typeof error === 'object' && 'status' in error) {
+    const status = Number((error as { status: unknown }).status)
+    return Number.isFinite(status) ? status : undefined
+  }
+  return undefined
 }
 
 function iso(value?: string) {
@@ -155,6 +193,7 @@ function apiGraphToLibrary(graph: SavedGraph): LibraryGraph | null {
       createdAt: graph.createdAt,
       updatedAt: graph.updatedAt,
       graph: {
+        version: 1,
         directed: graph.directed,
         nodes,
         edges,
@@ -166,7 +205,7 @@ function apiGraphToLibrary(graph: SavedGraph): LibraryGraph | null {
 }
 
 function benchToExperiment(row: BenchResult): ExperimentToSave {
-  return {
+  return normalizeExperimentToSave({
     clientId: row.id,
     runId: row.runId ?? null,
     algorithm: row.algorithm,
@@ -190,42 +229,52 @@ function benchToExperiment(row: BenchResult): ExperimentToSave {
     generateMs: row.generateMs,
     payload: row as unknown as Record<string, unknown>,
     updatedAt: row.timestamp,
-  }
+  })
 }
 
 function experimentToBench(row: Awaited<ReturnType<typeof getExperiments>>[number]): BenchResult | null {
-  if (row.payload && typeof row.payload === 'object') {
+  // I2: źródło prawdy = oryginalny payload BenchResult. Bez payloadu nie „wymyślamy” poprawnego pomiaru.
+  if (row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)) {
     const payload = row.payload as Partial<BenchResult>
-    if (typeof payload.algorithm === 'string' && typeof payload.vertices === 'number') {
+    if (typeof payload.algorithm === 'string' && typeof payload.vertices === 'number'
+      && typeof payload.mean === 'number' && typeof payload.min === 'number' && typeof payload.max === 'number') {
       return {
         id: String(payload.id ?? row.clientId ?? `srv-${row.id}`),
         algorithm: payload.algorithm as BenchResult['algorithm'],
         vertices: Number(payload.vertices),
-        edges: Number(payload.edges ?? row.edgeCount),
-        density: Number(payload.density ?? row.density),
-        repetitions: Number(payload.repetitions ?? row.repetitions),
-        mean: Number(payload.mean ?? row.meanMs),
-        median: Number(payload.median ?? row.medianMs ?? row.meanMs),
-        stdDev: Number(payload.stdDev ?? row.stdMs ?? 0),
-        min: Number(payload.min ?? row.minMs),
-        max: Number(payload.max ?? row.maxMs),
-        operations: Number(payload.operations ?? row.operations ?? 0),
+        edges: Number(payload.edges ?? 0),
+        density: Number(payload.density ?? 0),
+        repetitions: Number(payload.repetitions ?? 0),
+        mean: Number(payload.mean),
+        median: Number(payload.median ?? payload.mean),
+        stdDev: Number(payload.stdDev ?? 0),
+        min: Number(payload.min),
+        max: Number(payload.max),
+        operations: Number(payload.operations ?? 0),
         reached: Boolean(payload.reached),
         timestamp: String(payload.timestamp ?? row.updatedAt ?? row.createdAt),
-        generateMs: Number(payload.generateMs ?? row.generateMs ?? 0),
-        seed: Number(payload.seed ?? row.seed ?? 0),
-        directed: Boolean(payload.directed ?? row.directed),
-        topology: (payload.topology ?? row.topology ?? 'erdos') as BenchResult['topology'],
-        weightMin: Number(payload.weightMin ?? row.weightMin ?? 0),
-        weightMax: Number(payload.weightMax ?? row.weightMax ?? 0),
-        status: (payload.status ?? row.status ?? 'ran') as BenchResult['status'],
+        generateMs: Number(payload.generateMs ?? 0),
+        seed: Number(payload.seed ?? 0),
+        directed: Boolean(payload.directed),
+        topology: (payload.topology ?? 'erdos') as BenchResult['topology'],
+        weightMin: Number(payload.weightMin ?? 0),
+        weightMax: Number(payload.weightMax ?? 0),
+        status: (payload.status ?? 'ran') as BenchResult['status'],
         skipReason: typeof payload.skipReason === 'string' ? payload.skipReason : undefined,
         runId: typeof payload.runId === 'string' ? payload.runId : row.runId ?? undefined,
         sourceLabel: typeof payload.sourceLabel === 'string' ? payload.sourceLabel : row.sourceLabel ?? undefined,
+        methodologyVersion: typeof (payload as { methodologyVersion?: string }).methodologyVersion === 'string'
+          ? (payload as { methodologyVersion?: string }).methodologyVersion
+          : undefined,
+        timingMode: (payload as { timingMode?: BenchResult['timingMode'] }).timingMode,
+        batchSize: typeof (payload as { batchSize?: number }).batchSize === 'number'
+          ? (payload as { batchSize?: number }).batchSize
+          : undefined,
       }
     }
   }
   if (!['bfs', 'dfs', 'dijkstra', 'bellman', 'prim', 'kruskal'].includes(row.algorithm)) return null
+  // Jawna degradacja: kolumny API mogą być znormalizowane — wynik wykluczony z analizy.
   return {
     id: row.clientId || `srv-${row.id}`,
     algorithm: row.algorithm as BenchResult['algorithm'],
@@ -239,7 +288,7 @@ function experimentToBench(row: Awaited<ReturnType<typeof getExperiments>>[numbe
     min: row.minMs,
     max: row.maxMs,
     operations: row.operations ?? 0,
-    reached: true,
+    reached: false,
     timestamp: row.updatedAt || row.createdAt,
     generateMs: row.generateMs ?? 0,
     seed: row.seed ?? 0,
@@ -247,7 +296,8 @@ function experimentToBench(row: Awaited<ReturnType<typeof getExperiments>>[numbe
     topology: (row.topology || 'erdos') as BenchResult['topology'],
     weightMin: row.weightMin ?? 0,
     weightMax: row.weightMax ?? 0,
-    status: (row.status as BenchResult['status']) || 'ran',
+    status: 'error',
+    skipReason: 'Brak oryginalnego payloadu pomiaru w SQLite — kolumny API mogą być znormalizowane; wynik wykluczony z analizy.',
     runId: row.runId ?? undefined,
     sourceLabel: row.sourceLabel ?? undefined,
   }
@@ -353,7 +403,9 @@ async function flushQueue(report: SyncReport) {
         }
         report.pushed++
       } else if (item.entity === 'experiment' && item.op === 'upsert') {
-        await saveExperiment(item.payload)
+        // Migracja bezstratna: normalizuj stare pozycje kolejki (density/reps/czasy) przed POST.
+        const normalized = normalizeExperimentToSave(item.payload)
+        await saveExperiment(normalized)
         report.pushed++
       } else if (item.entity === 'research') {
         if (item.op === 'delete') {
@@ -374,8 +426,21 @@ async function flushQueue(report: SyncReport) {
         report.pushed++
       }
     } catch (error) {
-      remaining.push(item)
-      report.errors.push(error instanceof Error ? error.message : 'Błąd kolejki synchronizacji')
+      const message = error instanceof Error ? error.message : 'Błąd kolejki synchronizacji'
+      if (item.entity === 'experiment' && isPermanentSyncRejection(error)) {
+        // Kopia surowego + znormalizowanego payloadu; nie wraca do kolejki → brak pętli 400.
+        quarantineItem(item, message, httpStatusOf(error) ?? 400, {
+          normalizedPayload: normalizeExperimentToSave(item.payload),
+        })
+        report.errors.push(`Eksperyment ${item.id}: odrzucony (walidacja) — kopia w kwarantannie, bez ponawiania.`)
+      } else {
+        remaining.push(
+          item.entity === 'experiment'
+            ? { ...item, payload: normalizeExperimentToSave(item.payload) }
+            : item,
+        )
+        report.errors.push(message)
+      }
     }
   }
   writeQueue(remaining)
@@ -430,7 +495,18 @@ export function persistWorkspaceLocal(graph: WorkspaceGraph) {
   saveWorkspace(graph)
 }
 
-export async function syncAll(): Promise<SyncReport> {
+/** Blokuje równoległe syncAll (interval + online + przycisk) — chroni localStorage przed wyścigiem. */
+let syncInFlight: Promise<SyncReport> | null = null
+
+export function syncAll(): Promise<SyncReport> {
+  if (syncInFlight) return syncInFlight
+  syncInFlight = runSyncAll().finally(() => {
+    syncInFlight = null
+  })
+  return syncInFlight
+}
+
+async function runSyncAll(): Promise<SyncReport> {
   const report: SyncReport = {
     status: 'syncing',
     message: 'Synchronizacja z SQLite…',
@@ -452,20 +528,32 @@ export async function syncAll(): Promise<SyncReport> {
   try {
     await flushQueue(report)
 
-    // --- Graphs / library ---
+    // --- Graphs / library (równoległe pobieranie pełnych rekordów) ---
     const remoteInfos = await getSavedGraphs()
     const remoteLibraries: LibraryGraph[] = []
-    for (const info of remoteInfos) {
+    const graphFetches = await Promise.all(remoteInfos.map(async info => {
       try {
         const full = await getSavedGraph(info.id)
-        const mapped = apiGraphToLibrary({
-          ...full,
-          libraryId: info.libraryId ?? full.libraryId ?? null,
-        } as SavedGraph & { libraryId?: string | null })
-        if (mapped) remoteLibraries.push(mapped)
+        return {
+          ok: true as const,
+          mapped: apiGraphToLibrary({
+            ...full,
+            libraryId: info.libraryId ?? full.libraryId ?? null,
+          } as SavedGraph & { libraryId?: string | null }),
+        }
       } catch (error) {
-        report.errors.push(error instanceof Error ? error.message : 'Błąd pobierania grafu')
+        return {
+          ok: false as const,
+          message: error instanceof Error ? error.message : 'Błąd pobierania grafu',
+        }
       }
+    }))
+    for (const item of graphFetches) {
+      if (!item.ok) {
+        report.errors.push(item.message)
+        continue
+      }
+      if (item.mapped) remoteLibraries.push(item.mapped)
     }
     const localLibrary = listLibraryGraphs()
     const { merged: mergedLibrary, conflicts: graphConflicts } = mergeLibrary(localLibrary, remoteLibraries)
@@ -508,12 +596,23 @@ export async function syncAll(): Promise<SyncReport> {
     const remoteClientIds = new Set(remoteBench.map(r => r.id))
     for (const row of mergedBench) {
       if (remoteClientIds.has(row.id)) continue
+      const payload = benchToExperiment(row)
       try {
-        await saveExperiment(benchToExperiment(row))
+        await saveExperiment(payload)
         report.pushed++
       } catch (error) {
-        enqueue({ id: row.id, entity: 'experiment', op: 'upsert', payload: benchToExperiment(row) })
-        report.errors.push(error instanceof Error ? error.message : 'Błąd push eksperymentu')
+        const message = error instanceof Error ? error.message : 'Błąd push eksperymentu'
+        if (isPermanentSyncRejection(error)) {
+          quarantineItem(
+            { id: row.id, entity: 'experiment', op: 'upsert', payload },
+            message,
+            httpStatusOf(error) ?? 400,
+          )
+          report.errors.push(`Eksperyment ${row.id}: odrzucony (walidacja) — kopia w kwarantannie, bez ponawiania.`)
+        } else {
+          enqueue({ id: row.id, entity: 'experiment', op: 'upsert', payload })
+          report.errors.push(message)
+        }
       }
     }
 
@@ -525,11 +624,17 @@ export async function syncAll(): Promise<SyncReport> {
     for (const study of mergedStudies) saveResearchStudy(study)
     report.pulled += remoteStudies.length
 
-    const remoteStudyIds = new Set(remoteStudies.map(s => s.id))
+    const remoteStudyById = new Map(remoteStudies.map(s => [s.id, s]))
     for (const study of mergedStudies) {
-      if (remoteStudyIds.has(study.id)) {
+      const remote = remoteStudyById.get(study.id)
+      if (remote) {
+        const localStamp = study.updatedAt || study.createdAt
+        const remoteStamp = remote.updatedAt || remote.createdAt
+        // Pomijaj PUT, gdy lokalna kopia nie jest nowsza — unika powtarzalnych requestów co 60 s.
+        if (!(Date.parse(localStamp) > Date.parse(remoteStamp))) continue
         try {
           await updateResearchStudyApi(study.id, study)
+          report.pushed++
         } catch (error) {
           const message = error instanceof Error ? error.message : ''
           if (message.includes('409') || message.toLowerCase().includes('konflikt')) {
@@ -547,12 +652,7 @@ export async function syncAll(): Promise<SyncReport> {
       }
     }
 
-    // Ensure workspace remains intact (read+write same content).
-    const workspace = loadWorkspace()
-    if (workspace) saveWorkspace(workspace)
-
     localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString())
-    void STORAGE_KEY
 
     if (report.conflicts.length || report.errors.length) {
       report.status = 'error'

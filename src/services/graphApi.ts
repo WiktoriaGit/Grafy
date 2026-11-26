@@ -1,5 +1,6 @@
 import type { Edge, Node } from '@xyflow/react'
 import type { ResearchStudy } from '../utils/researchStudy'
+import { normalizeExperimentToSave } from './experimentPayload'
 
 const API_URL = 'http://localhost:3001/api'
 
@@ -35,6 +36,18 @@ export interface GraphToSave {
   updatedAt?: string
 }
 
+export class ApiHttpError extends Error {
+  readonly status: number
+  readonly details?: unknown
+
+  constructor(status: number, message: string, details?: unknown) {
+    super(`${status}: ${message}`)
+    this.name = 'ApiHttpError'
+    this.status = status
+    this.details = details
+  }
+}
+
 async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   let response: Response
   try {
@@ -46,9 +59,10 @@ async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error('Brak połączenia z backendem. Uruchom serwer na porcie 3001.')
   }
   if (!response.ok) {
-    const data: { error?: string; id?: number; updatedAt?: string } | null = await response.json().catch(() => null)
+    const data: { error?: string; details?: unknown; id?: number; updatedAt?: string } | null =
+      await response.json().catch(() => null)
     const suffix = data?.error ?? `Błąd serwera HTTP ${response.status}`
-    throw new Error(suffix)
+    throw new ApiHttpError(response.status, suffix, data?.details)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
@@ -154,7 +168,7 @@ export async function saveExperimentsBestEffort(experiments: ExperimentToSave[])
   let saved = 0
   try {
     for (const item of experiments) {
-      await saveExperiment(item)
+      await saveExperiment(normalizeExperimentToSave(item))
       saved++
     }
     return {

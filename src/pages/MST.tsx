@@ -110,9 +110,9 @@ export default function MST() {
         placeItems: 'center',
         fontWeight: 700,
         color: '#fff',
-        background: inTree ? '#145c4b' : '#24324c',
-        border: `2px solid ${inTree ? '#34d399' : '#52647f'}`,
-        boxShadow: inTree ? '0 0 14px #34d39955' : 'none',
+        background: inTree ? '#2A2440' : '#1C1C24',
+        border: `2px solid ${inTree ? '#34d399' : '#33333F'}`,
+        boxShadow: 'none',
       },
     }
   })
@@ -131,7 +131,7 @@ export default function MST() {
       animated: considered,
       style: { stroke: color, strokeWidth: chosen || considered || candidate ? 3.4 : 1.8 },
       labelStyle: { fill: '#e2e8f0', fontWeight: 700 },
-      labelBgStyle: { fill: '#17243a' },
+      labelBgStyle: { fill: '#1C1C24' },
     }
   })
 
@@ -242,7 +242,7 @@ export default function MST() {
               elementsSelectable={false}
               proOptions={{ hideAttribution: true }}
             >
-              <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#334155" />
+              <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#33333F" />
               <Controls showInteractive={false} />
               <GraphCalloutsOverlay callouts={graphCallouts} enabled={showGraphCallouts} />
             </ReactFlow>

@@ -2,14 +2,14 @@ import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
 export type GraphDocument = { nodes: Node[]; edges: Edge[]; directed: boolean }
 
-const style = { width: 54, height: 54, borderRadius: '50%', background: '#283657', border: '2px solid #818cf8', color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 700 }
+const style = { width: 54, height: 54, borderRadius: '50%', background: '#1C1C24', border: '2px solid #A78BFA', color: '#F4F4F5', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 700 }
 const node = (id: string, x: number, y: number): Node => ({ id, position: { x, y }, data: { label: id }, style })
 const edge = (source: string, target: string, weight: number, directed: boolean): Edge => ({
   id: `${source}-${target}`, source, target, label: String(weight), type: 'straight',
   style: { stroke: '#7c8ba7', strokeWidth: 2 },
   markerEnd: directed ? { type: MarkerType.ArrowClosed, color: '#7c8ba7' } : undefined,
   labelStyle: { fill: '#e2e8f0', fontWeight: 700, fontSize: 12 },
-  labelBgStyle: { fill: '#17243a', fillOpacity: 1 }, labelBgPadding: [6, 4], labelBgBorderRadius: 5,
+  labelBgStyle: { fill: '#1C1C24', fillOpacity: 1 }, labelBgPadding: [6, 4], labelBgBorderRadius: 5,
 })
 export function sampleGraph(): GraphDocument {
   const directed = true

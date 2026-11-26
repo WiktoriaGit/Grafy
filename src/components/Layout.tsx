@@ -18,20 +18,19 @@ import {
 } from 'lucide-react'
 import {
   getConnectionStatus,
-  startPersistenceLayer,
   subscribeConnectionStatus,
   syncAll,
   type ConnectionStatus,
 } from '../services/persistence'
 
 const navigation = [
-  { to: '/', label: 'Panel główny', icon: LayoutDashboard, end: true },
-  { to: '/editor', label: 'Edytor grafów', icon: Network },
-  { to: '/algorithms', label: 'Algorytmy', icon: GitBranch },
-  { to: '/comparison', label: 'Porównanie algorytmów', icon: GitCompare },
-  { to: '/experiments', label: 'Eksperymenty', icon: FlaskConical },
-  { to: '/results', label: 'Wyniki i analiza', icon: BarChart3 },
-  { to: '/mst', label: 'Prim i Kruskal', icon: GitBranch },
+  { to: '/', label: 'Panel główny', icon: LayoutDashboard, end: true, index: '01' },
+  { to: '/editor', label: 'Edytor grafów', icon: Network, index: '02' },
+  { to: '/algorithms', label: 'Algorytmy', icon: GitBranch, index: '03' },
+  { to: '/comparison', label: 'Porównanie algorytmów', icon: GitCompare, index: '04' },
+  { to: '/experiments', label: 'Eksperymenty', icon: FlaskConical, index: '05' },
+  { to: '/results', label: 'Wyniki i analiza', icon: BarChart3, index: '06' },
+  { to: '/mst', label: 'Prim i Kruskal', icon: GitBranch, index: '07' },
 ]
 
 const titles: Record<string, string> = {
@@ -60,11 +59,12 @@ export default function Layout() {
   const title = titles[location.pathname] ?? 'GraphLab'
 
   useEffect(() => {
-    startPersistenceLayer()
-    return subscribeConnectionStatus((status, detail) => {
+    // Warstwa sync startuje w main.tsx — tutaj tylko subskrypcja statusu UI.
+    const unsubscribe = subscribeConnectionStatus((status, detail) => {
       setDbStatus(status)
       if (detail) setDbDetail(detail)
     })
+    return () => { unsubscribe() }
   }, [])
 
   return (
@@ -79,11 +79,11 @@ export default function Layout() {
 
       <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-brand">
-          <div className="brand-icon"><Network size={23} strokeWidth={2.2} /></div>
+          <div className="brand-icon"><Network size={18} strokeWidth={2} /></div>
           {!collapsed && (
             <div className="brand-text">
               <strong>Graph<span>Lab</span></strong>
-              <small>ALGORITHM STUDIO</small>
+              <small>ANALYSIS LAB</small>
             </div>
           )}
           <button
@@ -102,21 +102,21 @@ export default function Layout() {
           </button>
         </div>
 
-        {!collapsed && <div className="nav-caption">PRZESTRZEŃ ROBOCZA</div>}
+        {!collapsed && <div className="nav-caption">MODUŁY</div>}
 
         <nav className="sidebar-nav" aria-label="Nawigacja główna">
-          {navigation.map(({ to, label, icon: Icon, end }) => (
+          {navigation.map(({ to, label, icon: Icon, end, index }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
-              title={label}
+              title={`${index} · ${label}`}
               onClick={() => setMobileOpen(false)}
               className={({ isActive }) => `nav-item ${isActive ? 'nav-active' : ''}`}
             >
-              <Icon size={19} strokeWidth={1.9} />
+              {!collapsed && <span className="nav-index">{index}</span>}
+              <Icon size={17} strokeWidth={1.8} />
               {!collapsed && <span>{label}</span>}
-              {!collapsed && <ChevronRight className="nav-arrow" size={15} />}
             </NavLink>
           ))}
         </nav>

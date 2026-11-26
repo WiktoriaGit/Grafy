@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildPairComparison,
+  invalidateBenchResult,
   methodologyWarnings,
   percentFaster,
   sameBenchmarkInput,
+  verifyMstWeights,
   verifyNonNegativeShortestPaths,
+  verifyReachableSets,
 } from './pairCompare'
 import type { BenchResult } from './benchmark'
 import { generateBenchmarkGraph } from './largeGraphs'
@@ -92,5 +95,47 @@ describe('Porównanie pary pomiarów', () => {
     const a = fakeResult({ algorithm: 'bfs', mean: 1, seed: 7, vertices: 1000, edges: 999 })
     const b = fakeResult({ algorithm: 'dfs', mean: 1.2, seed: 7, vertices: 1000, edges: 999 })
     expect(sameBenchmarkInput(a, b)).toBe(true)
+  })
+
+  it('invalidateBenchResult zachowuje czasy i ustawia status error (I1)', () => {
+    const row = fakeResult({ algorithm: 'bfs', mean: 3.5, min: 3, max: 4, median: 3.4, stdDev: 0.2 })
+    const bad = invalidateBenchResult(row, 'test walidacji')
+    expect(bad.status).toBe('error')
+    expect(bad.skipReason).toBe('test walidacji')
+    expect(bad.mean).toBe(3.5)
+    expect(bad.min).toBe(3)
+    expect(bad.max).toBe(4)
+    expect(bad.median).toBe(3.4)
+    expect(bad.stdDev).toBe(0.2)
+  })
+
+  it('BFS i DFS mają ten sam zbiór osiągalny (C2)', () => {
+    const graph = generateBenchmarkGraph({
+      topology: 'erdos',
+      vertices: 50,
+      densityPercent: 12,
+      seed: 11,
+      weightMin: 1,
+      weightMax: 5,
+      directed: true,
+    })
+    const agreement = verifyReachableSets(graph, 0)
+    expect(agreement.ok).toBe(true)
+    expect(agreement.mismatches).toBe(0)
+  })
+
+  it('Prim i Kruskal mają zgodną wagę MST/MSF także przy grafie niespójnym (C1)', () => {
+    const graph = generateBenchmarkGraph({
+      topology: 'erdos',
+      vertices: 40,
+      densityPercent: 3,
+      seed: 99,
+      weightMin: 1,
+      weightMax: 10,
+      directed: false,
+    })
+    const agreement = verifyMstWeights(graph, 0)
+    expect(agreement.ok).toBe(true)
+    expect(agreement.primWeight).toBeCloseTo(agreement.kruskalWeight, 6)
   })
 })

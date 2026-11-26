@@ -353,21 +353,21 @@ export default function Algorithms() {
     const background = onPath
       ? '#059669'
       : active
-        ? '#7c3aed'
+        ? '#A78BFA'
         : visited
-          ? '#3730a3'
+          ? '#2A2440'
           : inFrontier
             ? '#1d4ed8'
-            : '#24324c'
+            : '#1C1C24'
     const border = onPath
       ? '#6ee7b7'
       : active
-        ? '#ddd6fe'
+        ? '#C4B5FD'
         : visited
-          ? '#a5b4fc'
+          ? '#A78BFA'
           : inFrontier
             ? '#93c5fd'
-            : '#52647f'
+            : '#33333F'
 
     return {
       id: node.id,
@@ -380,10 +380,10 @@ export default function Algorithms() {
         display: 'grid',
         placeItems: 'center',
         fontWeight: 700,
-        color: '#fff',
+        color: '#F4F4F5',
         background,
         border: `2px solid ${border}`,
-        boxShadow: active ? '0 0 22px #8b5cf699' : inFrontier ? '0 0 16px #3b82f666' : 'none',
+        boxShadow: active ? '0 0 0 2px rgba(167,139,250,0.35)' : inFrontier ? '0 0 0 2px rgba(96,165,250,0.3)' : 'none',
       },
     }
   })
@@ -391,7 +391,7 @@ export default function Algorithms() {
   const edges: Edge[] = document.edges.map((edge, index) => {
     const highlighted = edgeMatches(step?.activeEdge, edge.source, edge.target, document.directed)
     const onPath = showPath && pathUsesEdge(displayPath, edge.source, edge.target, document.directed)
-    const color = onPath ? '#34d399' : highlighted ? '#c4b5fd' : '#64748b'
+    const color = onPath ? '#34d399' : highlighted ? '#A78BFA' : '#64748b'
     return {
       id: `algo-${index}`,
       source: edge.source,
@@ -402,7 +402,7 @@ export default function Algorithms() {
       style: { stroke: color, strokeWidth: highlighted || onPath ? 3.5 : 1.8 },
       markerEnd: document.directed ? { type: MarkerType.ArrowClosed, color } : undefined,
       labelStyle: { fill: '#e2e8f0', fontWeight: 700 },
-      labelBgStyle: { fill: '#17243a' },
+      labelBgStyle: { fill: '#1C1C24' },
     }
   })
 
@@ -577,7 +577,7 @@ export default function Algorithms() {
               }}
               proOptions={{ hideAttribution: true }}
             >
-              <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#334155" />
+              <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#33333F" />
               <Controls showInteractive={false} />
               <GraphCalloutsOverlay callouts={graphCallouts} enabled={showGraphCallouts} />
             </ReactFlow>

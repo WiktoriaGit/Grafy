@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Activity,
@@ -30,6 +30,11 @@ import {
   type BenchResult,
 } from '../utils/benchmark'
 import {
+  captureElementPngDataUrl,
+  exportBenchResultsPdf,
+  exportElementPng,
+} from '../utils/experimentExport'
+import {
   COMPLEXITY_CATALOG,
   COMPLEXITY_COMPARISON_NOTE,
   COMPLEXITY_SYMBOLS,
@@ -39,7 +44,7 @@ import './Results.css'
 
 const algorithms: AlgorithmId[] = ['bfs', 'dfs', 'dijkstra', 'bellman', 'prim', 'kruskal']
 const colors: Record<AlgorithmId, string> = {
-  bfs: '#a5b4fc',
+  bfs: '#A78BFA',
   dfs: '#34d399',
   dijkstra: '#38bdf8',
   bellman: '#fbbf24',
@@ -51,12 +56,18 @@ const valid = (r: BenchResult) =>
   (r.status ?? 'ran') === 'ran'
   && Number.isFinite(r.mean) && Number.isFinite(r.min) && Number.isFinite(r.max) && Number.isFinite(r.vertices)
 
+// Logika CSV pozostaje w kodzie — przycisk UI jest ukryty.
+void exportCSV
+
 export default function Results() {
   const [results, setResults] = useState<BenchResult[]>(() => loadResults().filter(valid))
   const [selected, setSelected] = useState<AlgorithmId | 'all'>('all')
   const [metric, setMetric] = useState<'mean' | 'median' | 'min' | 'max'>('mean')
   const [density, setDensity] = useState<string>('all')
   const [repetitions, setRepetitions] = useState<string>('all')
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportNote, setExportNote] = useState('')
+  const meansChartRef = useRef<HTMLDivElement | null>(null)
   const refresh = () => setResults(loadResults().filter(valid))
 
   useEffect(() => {
@@ -144,6 +155,58 @@ export default function Results() {
 
   const eduComplexity = COMPLEXITY_CATALOG.filter(item => item.context === 'educational')
   const benchComplexity = COMPLEXITY_CATALOG.filter(item => item.context === 'benchmark')
+
+  const exportPng = async () => {
+    if (!meansChartRef.current || !chartMeansByAlgorithm.length) {
+      setExportNote('Brak wykresu do eksportu PNG.')
+      return
+    }
+    try {
+      setExportBusy(true)
+      await exportElementPng(meansChartRef.current, 'graphlab-wyniki-wykres.png', { pixelRatio: 3 })
+      setExportNote('Zapisano PNG wykresu (wysoka rozdzielczość).')
+    } catch (error) {
+      setExportNote(error instanceof Error ? error.message : 'Eksport PNG nie powiódł się.')
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  const exportPdf = async () => {
+    if (!filtered.length) {
+      setExportNote('Brak przefiltrowanych wyników do PDF.')
+      return
+    }
+    try {
+      setExportBusy(true)
+      let chartDataUrl: string | null = null
+      if (meansChartRef.current && chartMeansByAlgorithm.length) {
+        try {
+          chartDataUrl = await captureElementPngDataUrl(meansChartRef.current, { pixelRatio: 2 })
+        } catch {
+          chartDataUrl = null
+        }
+      }
+      await exportBenchResultsPdf(filtered, {
+        title: 'Wyniki eksperymentów GraphLab',
+        generatedAt: filtered[0]?.timestamp,
+        graphParams: {
+          repetitions: repetitions === 'all' ? undefined : Number(repetitions),
+          density: density === 'all' ? undefined : Number(density),
+        },
+        notes: [
+          selected === 'all'
+            ? 'Filtrowanie: wszystkie algorytmy.'
+            : `Filtrowanie: tylko ${algorithmLabels[selected]}.`,
+        ],
+      }, chartDataUrl)
+      setExportNote('Zapisano raport PDF z bieżącymi wynikami.')
+    } catch (error) {
+      setExportNote(error instanceof Error ? error.message : 'Eksport PDF nie powiódł się.')
+    } finally {
+      setExportBusy(false)
+    }
+  }
 
   const removeAll = () => {
     if (!window.confirm('Usunąć wszystkie zapisane pomiary z przeglądarki?')) return
@@ -326,22 +389,22 @@ export default function Results() {
           <span className="section-chip">ms</span>
         </div>
         {chartMeansByAlgorithm.length ? (
-          <div className="results-chart">
+          <div className="results-chart" ref={meansChartRef}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartMeansByAlgorithm} margin={{ top: 15, right: 25, left: 18, bottom: 12 }}>
-                <CartesianGrid stroke="#29364a" strokeDasharray="3 5" />
-                <XAxis dataKey="algorithm" stroke="#94a3b8" tick={{ fontSize: 12 }} />
+                <CartesianGrid stroke="#33333F" strokeDasharray="3 5" />
+                <XAxis dataKey="algorithm" stroke="#A1A1AA" tick={{ fontSize: 12 }} />
                 <YAxis
-                  stroke="#94a3b8"
+                  stroke="#A1A1AA"
                   tick={{ fontSize: 12 }}
                   tickFormatter={n => Number(n).toFixed(2)}
-                  label={{ value: 'Czas [ms]', angle: -90, position: 'insideLeft', fill: '#94a3b8', offset: 4 }}
+                  label={{ value: 'Czas [ms]', angle: -90, position: 'insideLeft', fill: '#A1A1AA', offset: 4 }}
                 />
                 <Tooltip
-                  contentStyle={{ background: '#172033', border: '1px solid #334155', borderRadius: 10, color: '#fff' }}
+                  contentStyle={{ background: '#1C1C24', border: '1px solid #33333F', borderRadius: 8, color: '#F4F4F5' }}
                   formatter={(value) => [typeof value === 'number' ? `${format(value)} ms` : value, 'Średnia']}
                 />
-                <Bar dataKey="mean" name="Średni czas" fill="#818cf8" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="mean" name="Średni czas" fill="#A78BFA" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -359,21 +422,21 @@ export default function Results() {
           <div className="results-chart">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartByVertices} margin={{ top: 15, right: 25, left: 18, bottom: 18 }}>
-                <CartesianGrid stroke="#29364a" strokeDasharray="3 5" />
+                <CartesianGrid stroke="#33333F" strokeDasharray="3 5" />
                 <XAxis
                   dataKey="vertices"
-                  stroke="#94a3b8"
+                  stroke="#A1A1AA"
                   tick={{ fontSize: 12 }}
-                  label={{ value: 'Liczba wierzchołków (V)', position: 'insideBottom', offset: -6, fill: '#94a3b8' }}
+                  label={{ value: 'Liczba wierzchołków (V)', position: 'insideBottom', offset: -6, fill: '#A1A1AA' }}
                 />
                 <YAxis
-                  stroke="#94a3b8"
+                  stroke="#A1A1AA"
                   tick={{ fontSize: 12 }}
                   tickFormatter={n => Number(n).toFixed(2)}
-                  label={{ value: 'Czas [ms]', angle: -90, position: 'insideLeft', fill: '#94a3b8', offset: 4 }}
+                  label={{ value: 'Czas [ms]', angle: -90, position: 'insideLeft', fill: '#A1A1AA', offset: 4 }}
                 />
                 <Tooltip
-                  contentStyle={{ background: '#172033', border: '1px solid #334155', borderRadius: 10, color: '#fff' }}
+                  contentStyle={{ background: '#1C1C24', border: '1px solid #33333F', borderRadius: 8, color: '#F4F4F5' }}
                   formatter={(value, name) => [typeof value === 'number' ? `${format(value)} ms` : value, String(name)]}
                 />
                 <Legend verticalAlign="top" height={36} />
@@ -411,21 +474,21 @@ export default function Results() {
           <div className="results-chart">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartByEdges} margin={{ top: 15, right: 25, left: 18, bottom: 18 }}>
-                <CartesianGrid stroke="#29364a" strokeDasharray="3 5" />
+                <CartesianGrid stroke="#33333F" strokeDasharray="3 5" />
                 <XAxis
                   dataKey="edges"
-                  stroke="#94a3b8"
+                  stroke="#A1A1AA"
                   tick={{ fontSize: 12 }}
-                  label={{ value: 'Liczba krawędzi (E)', position: 'insideBottom', offset: -6, fill: '#94a3b8' }}
+                  label={{ value: 'Liczba krawędzi (E)', position: 'insideBottom', offset: -6, fill: '#A1A1AA' }}
                 />
                 <YAxis
-                  stroke="#94a3b8"
+                  stroke="#A1A1AA"
                   tick={{ fontSize: 12 }}
                   tickFormatter={n => Number(n).toFixed(2)}
-                  label={{ value: 'Czas [ms]', angle: -90, position: 'insideLeft', fill: '#94a3b8', offset: 4 }}
+                  label={{ value: 'Czas [ms]', angle: -90, position: 'insideLeft', fill: '#A1A1AA', offset: 4 }}
                 />
                 <Tooltip
-                  contentStyle={{ background: '#172033', border: '1px solid #334155', borderRadius: 10, color: '#fff' }}
+                  contentStyle={{ background: '#1C1C24', border: '1px solid #33333F', borderRadius: 8, color: '#F4F4F5' }}
                   formatter={(value, name) => [typeof value === 'number' ? `${format(value)} ms` : value, String(name)]}
                 />
                 <Legend verticalAlign="top" height={36} />
@@ -453,14 +516,26 @@ export default function Results() {
         <div className="panel-header">
           <h3>Historia pomiarów ({filtered.length})</h3>
           <div className="results-actions">
-            <button className="btn btn-outline" disabled={!filtered.length} onClick={() => exportCSV(filtered)}>
-              <Download size={15} /> Eksport CSV
+            <button
+              className="btn btn-outline"
+              disabled={!chartMeansByAlgorithm.length || exportBusy}
+              onClick={() => { void exportPng() }}
+            >
+              <Download size={15} /> PNG
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={!filtered.length || exportBusy}
+              onClick={() => { void exportPdf() }}
+            >
+              <Download size={15} /> PDF
             </button>
             <button className="btn btn-outline" disabled={!results.length} onClick={removeAll}>
               <Trash2 size={15} /> Usuń historię
             </button>
           </div>
         </div>
+        {exportNote && <p className="results-note">{exportNote}</p>}
         <div className="table-scroll">
           <table className="data-table">
             <thead>

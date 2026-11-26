@@ -393,86 +393,324 @@ function complexityHint(group: AlgorithmProblemGroup): string {
   return 'Prim z kopcem ≈ O((V+E) log V), Kruskal ≈ O(E log E) (sortowanie + Union-Find)'
 }
 
+const HEURISTIC_DISCLAIMER =
+  'Sugestia automatyczna jest heurystyczną interpretacją wyników (nie formalnym testem statystycznym) — ostateczną ocenę należy sformułować ręcznie.'
+
+type PairPoint = {
+  caseIndex: number
+  label: string
+  vertices: number
+  edges: number
+  density: number
+  topology: GraphTopology
+  meanA: number
+  meanB: number
+  stdA: number
+  stdB: number
+  gap: number
+  noise: number
+  significant: boolean
+  faster: AlgorithmId | null
+}
+
+function collectCompletePairs(
+  study: Pick<ResearchStudy, 'config' | 'cases'>,
+  algoA: AlgorithmId,
+  algoB: AlgorithmId,
+): PairPoint[] {
+  const points: PairPoint[] = []
+  for (const item of study.cases) {
+    const ra = item.results.find(r => r.algorithm === algoA && (r.status ?? 'ran') === 'ran')
+    const rb = item.results.find(r => r.algorithm === algoB && (r.status ?? 'ran') === 'ran')
+    // Tylko kompletne, poprawne pary — bez uzupełniania zerami.
+    if (!ra || !rb) continue
+    if (!Number.isFinite(ra.mean) || !Number.isFinite(rb.mean)) continue
+    const gap = Math.abs(ra.mean - rb.mean)
+    const noise = Math.max(ra.stdDev || 0, rb.stdDev || 0, 0.05)
+    const significant = gap >= 2 * noise
+    points.push({
+      caseIndex: item.plan.index,
+      label: item.plan.label,
+      vertices: item.actualVertices,
+      edges: item.actualEdges,
+      density: item.actualDensity,
+      topology: item.plan.topology,
+      meanA: ra.mean,
+      meanB: rb.mean,
+      stdA: ra.stdDev || 0,
+      stdB: rb.stdDev || 0,
+      gap,
+      noise,
+      significant,
+      faster: significant ? (ra.mean < rb.mean ? algoA : algoB) : null,
+    })
+  }
+  return points
+}
+
+function withDisclaimer(note: string): string {
+  return `${note} ${HEURISTIC_DISCLAIMER}`
+}
+
+function mismatchNote(expected: string): { verdict: HypothesisVerdict; note: string } {
+  return {
+    verdict: 'inconclusive',
+    note: withDisclaimer(
+      `Hipoteza nie pasuje do konfiguracji badania (${expected}). Sugestia automatyczna nie rozstrzyga wyniku.`,
+    ),
+  }
+}
+
+/** Czy czasy rosną wraz z czynnikiem X (porównanie pierwszego i ostatniego punktu po sortowaniu). */
+function endpointRise(
+  sorted: Array<{ x: number; y: number; noise: number }>,
+  factor = 1.25,
+): 'up' | 'down' | 'flat' {
+  if (sorted.length < 2) return 'flat'
+  const first = sorted[0]
+  const last = sorted[sorted.length - 1]
+  const delta = last.y - first.y
+  const scale = Math.max(first.noise, last.noise, 0.05)
+  if (Math.abs(delta) < 2 * scale) return 'flat'
+  if (last.y > first.y * factor && last.y > first.y + 2 * scale) return 'up'
+  if (last.y < first.y / factor && last.y < first.y - 2 * scale) return 'down'
+  return 'flat'
+}
+
 export function suggestHypothesisVerdict(study: Pick<ResearchStudy, 'config' | 'cases'>): {
   verdict: HypothesisVerdict
   note: string
 } {
-  const ran = study.cases.filter(c => c.results.some(r => (r.status ?? 'ran') === 'ran'))
-  if (ran.length < 2) {
+  const h = study.config.hypothesis
+  const kind = study.config.studyKind
+  const group = study.config.group
+  const [pairA, pairB] = ALGORITHM_PAIR_BY_GROUP[group]
+  const points = collectCompletePairs(study, pairA, pairB)
+
+  if (points.length < 2) {
     return {
       verdict: 'inconclusive',
-      note: 'Za mało ukończonych przypadków, by oznaczyć hipotezę jako wspieraną lub niewspieraną.',
+      note: withDisclaimer(
+        'Za mało kompletnych, poprawnych par pomiarowych (wymagane ≥ 2), by rozstrzygnąć hipotezę.',
+      ),
     }
   }
 
-  const [a, b] = ALGORITHM_PAIR_BY_GROUP[study.config.group]
-  const meaningful: Array<{ faster: AlgorithmId; gapPct: number }> = []
-  for (const item of ran) {
-    const ra = item.results.find(r => r.algorithm === a && (r.status ?? 'ran') === 'ran')
-    const rb = item.results.find(r => r.algorithm === b && (r.status ?? 'ran') === 'ran')
-    if (!ra || !rb) continue
-    const gap = Math.abs(ra.mean - rb.mean)
-    const noise = Math.max(ra.stdDev, rb.stdDev, 0.05)
-    if (gap < 2 * noise) continue
-    const slower = Math.max(ra.mean, rb.mean)
-    meaningful.push({
-      faster: ra.mean < rb.mean ? a : b,
-      gapPct: slower > 0 ? (gap / slower) * 100 : 0,
-    })
-  }
-
-  if (meaningful.length < 2) {
-    return {
-      verdict: 'inconclusive',
-      note: 'Różnice są małe względem zmienności pomiarów — hipoteza pozostaje nierozstrzygnięta.',
+  // ——— H1: wpływ liczby krawędzi (stałe V) na czas ———
+  if (h === 'H1') {
+    if (kind !== 'edges' && kind !== 'density') {
+      return mismatchNote('oczekiwane badanie edges lub density przy stałej liczbie wierzchołków')
     }
-  }
-
-  if (study.config.hypothesis === 'H1' || study.config.hypothesis === 'H3' || study.config.hypothesis === 'H4') {
-    const spreads = ran.map(c => {
-      const ra = c.results.find(r => r.algorithm === a && (r.status ?? 'ran') === 'ran')
-      const rb = c.results.find(r => r.algorithm === b && (r.status ?? 'ran') === 'ran')
-      if (!ra || !rb) return 0
-      return Math.abs(ra.mean - rb.mean)
-    })
-    const maxSpread = Math.max(...spreads)
-    const minSpread = Math.min(...spreads.filter(x => x > 0), maxSpread)
-    if (maxSpread > minSpread * 1.5) {
+    // Średni czas obu algorytmów vs liczba krawędzi (lub gęstość).
+    const byEdges = [...points].sort((p, q) => p.edges - q.edges || p.density - q.density)
+    const seriesA = byEdges.map(p => ({ x: p.edges, y: p.meanA, noise: Math.max(p.stdA, 0.05) }))
+    const seriesB = byEdges.map(p => ({ x: p.edges, y: p.meanB, noise: Math.max(p.stdB, 0.05) }))
+    const riseA = endpointRise(seriesA)
+    const riseB = endpointRise(seriesB)
+    const vFixed = byEdges.every(p => p.vertices === byEdges[0].vertices)
+    const edgeSpan = byEdges[byEdges.length - 1].edges - byEdges[0].edges
+    if (edgeSpan <= 0) {
+      return {
+        verdict: 'inconclusive',
+        note: withDisclaimer('Liczba krawędzi nie zmienia się między przypadkami — nie można ocenić H1.'),
+      }
+    }
+    if (riseA === 'up' || riseB === 'up') {
       return {
         verdict: 'supported',
-        note: 'Zaobserwowano wyraźne zmiany relacji czasów między przypadkami serii (wsparcie empiryczne, nie dowód uniwersalny).',
+        note: withDisclaimer(
+          `Zaobserwowano wzrost czasu wraz ze wzrostem liczby krawędzi`
+          + `${vFixed ? ' przy stałym V' : ' (V nie było w pełni stałe)'}`
+          + ` dla co najmniej jednego algorytmu z pary ${algorithmLabels[pairA]}/${algorithmLabels[pairB]}.`,
+        ),
+      }
+    }
+    if (riseA === 'flat' && riseB === 'flat') {
+      return {
+        verdict: 'unsupported',
+        note: withDisclaimer(
+          'W tej serii czasy nie rosną wyraźnie wraz z liczbą krawędzi (względem zmienności) — H1 nie jest wspierana tymi danymi.',
+        ),
       }
     }
     return {
       verdict: 'inconclusive',
-      note: 'Serie nie pokazują wyraźnej zmiany relacji czasów — wynik nierozstrzygnięty.',
+      note: withDisclaimer('Trend czasów względem liczby krawędzi nie jest jednoznaczny względem zmienności pomiarów.'),
     }
   }
 
-  // H2: gap Dijkstra vs Bellman grows with size
-  const gaps = ran.map(c => {
-    const ra = c.results.find(r => r.algorithm === 'dijkstra' && (r.status ?? 'ran') === 'ran')
-    const rb = c.results.find(r => r.algorithm === 'bellman' && (r.status ?? 'ran') === 'ran')
-    if (!ra || !rb) return null
-    return { v: c.actualVertices, gap: Math.abs(ra.mean - rb.mean) }
-  }).filter((x): x is { v: number; gap: number } => x != null)
-    .sort((p, q) => p.v - q.v)
-
-  if (gaps.length >= 2 && gaps[gaps.length - 1].gap > gaps[0].gap * 1.3) {
+  // ——— H2: luka Dijkstra–Bellman rośnie z rozmiarem ———
+  if (h === 'H2') {
+    if (group !== 'shortest' || (pairA !== 'dijkstra' && pairB !== 'dijkstra')) {
+      return mismatchNote('oczekiwana para Dijkstra / Bellman–Ford (grupa shortest)')
+    }
+    if (kind !== 'vertices') {
+      return mismatchNote('oczekiwane badanie vertices (wzrost rozmiaru grafu)')
+    }
+    const byV = [...points].sort((p, q) => p.vertices - q.vertices)
+    if (byV[byV.length - 1].vertices <= byV[0].vertices) {
+      return {
+        verdict: 'inconclusive',
+        note: withDisclaimer('Rozmiar grafu (V) nie rośnie w serii — nie można ocenić H2.'),
+      }
+    }
+    const gapSeries = byV.map(p => ({
+      x: p.vertices,
+      y: p.gap,
+      noise: Math.max(p.noise, 0.05),
+    }))
+    const trend = endpointRise(gapSeries, 1.3)
+    // Wymagaj też, by luka na końcu była znacząca względem szumu.
+    const lastSig = byV[byV.length - 1].significant
+    if (trend === 'up' && lastSig) {
+      return {
+        verdict: 'supported',
+        note: withDisclaimer(
+          'Różnica czasów Dijkstra–Bellman rosła wraz z liczbą wierzchołków w tej serii (z uwzględnieniem zmienności).',
+        ),
+      }
+    }
+    if (trend === 'down' || (trend === 'flat' && !lastSig)) {
+      return {
+        verdict: 'unsupported',
+        note: withDisclaimer(
+          'W tej serii różnica czasów Dijkstra–Bellman nie rosła wyraźnie wraz z rozmiarem — H2 nie jest wspierana tymi danymi.',
+        ),
+      }
+    }
     return {
-      verdict: 'supported',
-      note: 'Różnica czasów Dijkstra–Bellman rosła wraz z rozmiarem w tej serii (wsparcie empiryczne).',
+      verdict: 'inconclusive',
+      note: withDisclaimer('Trend różnicy czasów względem rozmiaru nie jest jednoznaczny względem zmienności.'),
     }
   }
-  if (gaps.length >= 2 && gaps[gaps.length - 1].gap < gaps[0].gap * 0.9) {
+
+  // ——— H3: struktura wpływa na względną wydajność Prima i Kruskala ———
+  if (h === 'H3') {
+    if (group !== 'mst') {
+      return mismatchNote('oczekiwana para Prim / Kruskal (grupa mst)')
+    }
+    if (kind !== 'structure') {
+      return mismatchNote('oczekiwane badanie structure (różne topologie)')
+    }
+    const topologies = new Set(points.map(p => p.topology))
+    if (topologies.size < 2) {
+      return {
+        verdict: 'inconclusive',
+        note: withDisclaimer('Za mało różnych topologii w kompletnych parach — nie można ocenić H3.'),
+      }
+    }
+    const edgeVals = points.map(p => p.edges)
+    const densVals = points.map(p => p.density)
+    const edgeRange = Math.max(...edgeVals) - Math.min(...edgeVals)
+    const densRange = Math.max(...densVals) - Math.min(...densVals)
+    const confound =
+      edgeRange > Math.max(1, Math.min(...edgeVals) * 0.15)
+      || densRange > 5
+
+    const winners = points.filter(p => p.faster != null).map(p => p.faster!)
+    const distinctWinners = new Set(winners)
+    const sigGaps = points.filter(p => p.significant)
+    const gapVals = sigGaps.map(p => p.gap)
+    const gapSpread = gapVals.length >= 2
+      ? Math.max(...gapVals) / Math.max(Math.min(...gapVals), 1e-9)
+      : 1
+
+    if (distinctWinners.size >= 2 || gapSpread >= 1.5) {
+      return {
+        verdict: 'supported',
+        note: withDisclaimer(
+          `Zaobserwowano zmiany względnej wydajności Prima/Kruskala między topologiami`
+          + (confound
+            ? '. Uwaga: jednocześnie zmieniały się liczba krawędzi i/lub gęstość — efektu nie należy przypisywać wyłącznie strukturze.'
+            : '.'),
+        ),
+      }
+    }
+    if (sigGaps.length === 0) {
+      return {
+        verdict: 'inconclusive',
+        note: withDisclaimer(
+          'Różnice Prim–Kruskal są małe względem zmienności we wszystkich topologiach — wynik nierozstrzygnięty'
+          + (confound ? ' (dodatkowo: E/gęstość nie były w pełni kontrolowane).' : '.'),
+        ),
+      }
+    }
     return {
       verdict: 'unsupported',
-      note: 'W tej serii różnica czasów nie rosła wraz z rozmiarem — hipoteza H2 nie jest wspierana tymi danymi.',
+      note: withDisclaimer(
+        'Względna wydajność Prima i Kruskala nie zmienia się wyraźnie między topologiami w tej serii'
+        + (confound
+          ? '. Uwaga: przy zmianie topologii zmieniały się też E/gęstość — interpretacja „czystego” wpływu struktury jest ograniczona.'
+          : '.'),
+      ),
     }
   }
+
+  // ——— H4: BFS vs DFS — różnice zależne od struktury ———
+  if (h === 'H4') {
+    if (group !== 'search') {
+      return mismatchNote('oczekiwana para BFS / DFS (grupa search)')
+    }
+    if (kind !== 'structure') {
+      return mismatchNote('oczekiwane badanie structure (różne topologie)')
+    }
+    const topologies = new Set(points.map(p => p.topology))
+    if (topologies.size < 2) {
+      return {
+        verdict: 'inconclusive',
+        note: withDisclaimer('Za mało różnych topologii w kompletnych parach — nie można ocenić H4.'),
+      }
+    }
+    const edgeVals = points.map(p => p.edges)
+    const densVals = points.map(p => p.density)
+    const confound =
+      Math.max(...edgeVals) - Math.min(...edgeVals) > Math.max(1, Math.min(...edgeVals) * 0.15)
+      || Math.max(...densVals) - Math.min(...densVals) > 5
+
+    const winners = points.filter(p => p.faster != null).map(p => p.faster!)
+    const distinctWinners = new Set(winners)
+    const sigGaps = points.filter(p => p.significant)
+    const relativeGaps = points.map(p => {
+      const slower = Math.max(p.meanA, p.meanB)
+      return slower > 0 ? p.gap / slower : 0
+    })
+    const maxRel = Math.max(...relativeGaps)
+    const minRel = Math.min(...relativeGaps)
+
+    if (distinctWinners.size >= 2 || (sigGaps.length >= 2 && maxRel > minRel * 1.5 + 1e-9)) {
+      return {
+        verdict: 'supported',
+        note: withDisclaimer(
+          `Zaobserwowano różnice wydajności BFS/DFS zależne od topologii`
+          + (confound
+            ? '. Uwaga: jednocześnie zmieniały się E i/lub gęstość — nie przypisuj efektu wyłącznie strukturze.'
+            : ', mimo podobnej złożoności asymptotycznej O(V+E).'),
+        ),
+      }
+    }
+    if (sigGaps.length === 0) {
+      return {
+        verdict: 'inconclusive',
+        note: withDisclaimer(
+          'Różnice BFS–DFS są małe względem zmienności we wszystkich topologiach — wynik nierozstrzygnięty'
+          + (confound ? ' (E/gęstość także się zmieniały).' : '.'),
+        ),
+      }
+    }
+    return {
+      verdict: 'unsupported',
+      note: withDisclaimer(
+        'W tej serii różnice BFS–DFS nie zależą wyraźnie od struktury grafu'
+        + (confound
+          ? '. Przy zmianie topologii zmieniały się też E/gęstość — ostrożna interpretacja.'
+          : '.'),
+      ),
+    }
+  }
+
   return {
     verdict: 'inconclusive',
-    note: 'Trend różnicy czasów względem rozmiaru nie jest jednoznaczny.',
+    note: withDisclaimer('Nieznana lub nieobsługiwana hipoteza — brak automatycznej sugestii.'),
   }
 }
 

@@ -72,6 +72,7 @@ export function complexityLabel(id: AlgorithmId): string {
 export function statusLabel(result: BenchResult): string {
   const status = result.status ?? 'ran'
   if (status === 'ran') return 'wykonano'
-  if (status === 'skipped') return 'pominięto'
-  return 'błąd'
+  const reason = result.skipReason?.trim()
+  if (status === 'skipped') return reason ? `pominięto: ${reason}` : 'pominięto'
+  return reason ? `błąd: ${reason}` : 'błąd'
 }

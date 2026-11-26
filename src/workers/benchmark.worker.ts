@@ -1,8 +1,9 @@
 /// <reference lib="webworker" />
 import {
   algorithmLabels,
-  measure,
+  measureAlgorithmsFair,
   skippedResult,
+  type AlgorithmId,
   type BenchmarkRequest,
   type BenchGraph,
   type BenchResult,
@@ -16,7 +17,13 @@ import {
   type GeneratorParams,
   validateGeneratorParams,
 } from '../utils/largeGraphs'
-import { verifyNonNegativeShortestPaths, type DistanceAgreement } from '../utils/pairCompare'
+import {
+  invalidateBenchResult,
+  verifyMstWeights,
+  verifyNonNegativeShortestPaths,
+  verifyReachableSets,
+  type DistanceAgreement,
+} from '../utils/pairCompare'
 
 type Reply =
   | { type: 'progress'; message: string; percent: number }
@@ -105,9 +112,10 @@ self.onmessage = (event: MessageEvent<BenchmarkRequest>) => {
     }
 
     const results: BenchResult[] = []
+    const eligible: AlgorithmId[] = []
     for (let index = 0; index < data.selected.length; index++) {
       const id = data.selected[index]
-      const percent = 15 + Math.round(((index + 1) / data.selected.length) * 80)
+      const percent = 15 + Math.round(((index + 1) / data.selected.length) * 40)
       const eligibility = evaluateAlgorithmEligibility(id, facts)
       if (!eligibility.ok) {
         send({
@@ -118,20 +126,68 @@ self.onmessage = (event: MessageEvent<BenchmarkRequest>) => {
         results.push(skippedResult(graph, id, eligibility.reason, metaBase, 'skipped'))
         continue
       }
+      eligible.push(id)
+    }
 
+    if (eligible.length) {
       send({
         type: 'progress',
-        message: `Pomiar: ${algorithmLabels[id]} (${index + 1}/${data.selected.length}), ${data.repetitions} powtórzeń`,
-        percent,
+        message: `Fair measurement (${eligible.map(id => algorithmLabels[id]).join(' · ')}), ${data.repetitions} powtórzeń`,
+        percent: 55,
       })
-      results.push(measure(graph, id, data.repetitions, metaBase))
+      const measured = measureAlgorithmsFair(graph, eligible, data.repetitions, metaBase)
+      const byId = new Map(measured.map(r => [r.algorithm, r]))
+      // Zachowaj kolejność UI: skipped już w `results`, eligible wstaw wg selected.
+      const merged: BenchResult[] = []
+      for (const id of data.selected) {
+        const fromSkipped = results.find(r => r.algorithm === id)
+        if (fromSkipped) merged.push(fromSkipped)
+        else {
+          const m = byId.get(id)
+          if (m) merged.push(m)
+        }
+      }
+      results.length = 0
+      results.push(...merged)
     }
 
     let distanceAgreement: DistanceAgreement | undefined
-    const ranIds = new Set(results.filter(r => r.status === 'ran').map(r => r.algorithm))
+    const ranIds = new Set(results.filter(r => (r.status ?? 'ran') === 'ran').map(r => r.algorithm))
+
     if (ranIds.has('dijkstra') && ranIds.has('bellman') && facts.weightMin >= 0) {
       send({ type: 'progress', message: 'Weryfikacja zgodności odległości Dijkstra vs Bellman–Ford...', percent: 96 })
       distanceAgreement = verifyNonNegativeShortestPaths(graph, 0)
+      if (!distanceAgreement.ok) {
+        for (let i = 0; i < results.length; i++) {
+          if (results[i].algorithm === 'dijkstra' || results[i].algorithm === 'bellman') {
+            results[i] = invalidateBenchResult(results[i], distanceAgreement.message)
+          }
+        }
+      }
+    }
+
+    if (ranIds.has('bfs') && ranIds.has('dfs')) {
+      send({ type: 'progress', message: 'Weryfikacja zbiorów osiągalnych BFS vs DFS...', percent: 97 })
+      const reachable = verifyReachableSets(graph, 0)
+      if (!reachable.ok) {
+        for (let i = 0; i < results.length; i++) {
+          if (results[i].algorithm === 'bfs' || results[i].algorithm === 'dfs') {
+            results[i] = invalidateBenchResult(results[i], reachable.message)
+          }
+        }
+      }
+    }
+
+    if (ranIds.has('prim') && ranIds.has('kruskal')) {
+      send({ type: 'progress', message: 'Weryfikacja wagi MST Prim vs Kruskal...', percent: 98 })
+      const mst = verifyMstWeights(graph, 0)
+      if (!mst.ok) {
+        for (let i = 0; i < results.length; i++) {
+          if (results[i].algorithm === 'prim' || results[i].algorithm === 'kruskal') {
+            results[i] = invalidateBenchResult(results[i], mst.message)
+          }
+        }
+      }
     }
 
     send({ type: 'progress', message: 'Zakończono pomiary.', percent: 100 })

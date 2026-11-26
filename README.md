@@ -2,15 +2,29 @@
 
 Interaktywna wizualizacja i analiza algorytmów grafowych (praca inżynierska).
 
-## Uruchomienie
+## Uruchomienie (frontend + backend)
+
+W **dwóch** oknach PowerShell:
 
 ```powershell
+# 1) Backend SQLite (port 3001)
+cd "C:\Users\wikaf\OneDrive\Desktop\graphlab\backend"
+npm install
+npm run dev
+```
+
+```powershell
+# 2) Frontend Vite (port 5173)
 cd "C:\Users\wikaf\OneDrive\Desktop\graphlab"
 npm install
 npm run dev
 ```
 
-Aplikacja: [http://localhost:5173](http://localhost:5173)
+- Aplikacja: [http://localhost:5173](http://localhost:5173)
+- API: [http://localhost:3001/api/health](http://localhost:3001/api/health)
+- Status bazy w prawym górnym rogu: Połączono / Offline / Synchronizacja / Błąd
+
+Kopia zapasowa SQLite trafia do `backend/data/backups/` przy starcie API.
 
 ## Testy i build
 

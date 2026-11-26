@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   Activity,
@@ -20,6 +20,15 @@ import {
   type BenchResult,
   type BenchmarkRequest,
 } from '../utils/benchmark'
+import {
+  captureElementPngDataUrl,
+  exportBenchResultsPdf,
+  exportElementPng,
+} from '../utils/experimentExport'
+import {
+  acceptNumericDraft,
+  parseIntField,
+} from '../utils/numericInput'
 import {
   ALL_BENCHMARK_ALGORITHMS,
   ALGORITHM_PROBLEM_GROUP,
@@ -53,8 +62,10 @@ import { loadWorkspace } from '../workspace/graphWorkspace'
 import { saveExperimentsBestEffort } from '../services/graphApi'
 import { persistBenchResultsLocal } from '../services/persistence'
 import GraphLibraryPanel from '../components/GraphLibraryPanel'
-import ResearchStudyPanel from '../components/ResearchStudyPanel'
 import './Experiments.css'
+
+/** Badania porównawcze + Recharts — dopiero po przełączeniu trybu (nie w single). */
+const ResearchStudyPanel = lazy(() => import('../components/ResearchStudyPanel'))
 
 type GraphSource = 'generator' | 'editor' | 'library'
 type SelectMode = 'pair' | 'multi' | 'all'
@@ -63,6 +74,9 @@ type ExperimentsMode = 'single' | 'research'
 const fmt = (n: number) => n.toLocaleString('pl-PL', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 const OPERATIONS_HINT =
   'Operacje benchmarku: licznik wewnętrznych przejść/relaksacji w lean-implementacji Web Workera (nie kroki animacji).'
+
+// Logika CSV pozostaje w kodzie — przycisk UI jest ukryty.
+void exportCSV
 
 const topologies: GraphTopology[] = [
   'erdos',
@@ -85,12 +99,12 @@ export default function Experiments() {
   )
   const [topology, setTopology] = useState<GraphTopology>(scenarioSizes ? 'path' : 'erdos')
   const [vertices, setVertices] = useState(1000)
-  const [seed, setSeed] = useState(12345)
+  const [seedText, setSeedText] = useState('12345')
   const [density, setDensity] = useState(10)
   const [edgeCountMode, setEdgeCountMode] = useState<'density' | 'exact'>('density')
-  const [exactEdges, setExactEdges] = useState(200)
-  const [weightMin, setWeightMin] = useState(1)
-  const [weightMax, setWeightMax] = useState(20)
+  const [exactEdgesText, setExactEdgesText] = useState('200')
+  const [weightMinText, setWeightMinText] = useState('1')
+  const [weightMaxText, setWeightMaxText] = useState('20')
   const [directed, setDirected] = useState(false)
   const [repetitions, setRepetitions] = useState(scenarioSizes ? 5 : 10)
   const [graphSource, setGraphSource] = useState<GraphSource>('generator')
@@ -109,32 +123,68 @@ export default function Experiments() {
       : 'Wybierz źródło grafu i algorytmy. Przed startem zobaczysz status gotowości / pominięcia.',
   )
   const [progress, setProgress] = useState(0)
+  const [exportBusy, setExportBusy] = useState(false)
   const [storageNote, setStorageNote] = useState(
     'Wyniki: localStorage (graphlab-benchmarks-v2). SQLite, gdy API :3001 działa.',
   )
   const workerRef = useRef<Worker | null>(null)
+  const sessionChartRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => () => workerRef.current?.terminate(), [])
 
-  const selected = mode === 'pair'
-    ? [pairA, pairB]
-    : mode === 'all'
-      ? [...ALL_BENCHMARK_ALGORITHMS]
-      : multiSelected
+  const selected = useMemo(
+    () => (mode === 'pair'
+      ? [pairA, pairB]
+      : mode === 'all'
+        ? [...ALL_BENCHMARK_ALGORITHMS]
+        : multiSelected),
+    [mode, pairA, pairB, multiSelected],
+  )
 
   const pairMethodNotes = useMemo(() => methodologyWarnings(pairA, pairB), [pairA, pairB])
-  const libraryEntries = useMemo(() => listLibraryGraphs(), [results, libraryId, graphSource])
+  const libraryEntries = useMemo(() => listLibraryGraphs(), [libraryId, graphSource])
+
+  const numericDrafts = useMemo(() => {
+    const weightMin = parseIntField(weightMinText, { label: 'Waga min', integer: true })
+    const weightMax = parseIntField(weightMaxText, { label: 'Waga max', integer: true })
+    const seed = parseIntField(seedText, { label: 'Seed', integer: true })
+    const exactEdges = parseIntField(exactEdgesText, {
+      label: 'Liczba krawędzi',
+      min: 1,
+      max: MAX_EDGES,
+      integer: true,
+    })
+    const errors: string[] = []
+    if (graphSource === 'generator') {
+      if (!weightMin.ok) errors.push(weightMin.message)
+      if (!weightMax.ok) errors.push(weightMax.message)
+      if (!seed.ok) errors.push(seed.message)
+      if (edgeCountMode === 'exact' && topology === 'erdos' && !exactEdges.ok) errors.push(exactEdges.message)
+      if (weightMin.ok && weightMax.ok && weightMin.value > weightMax.value) {
+        errors.push('Waga min nie może być większa niż waga max.')
+      }
+    }
+    return {
+      weightMin: weightMin.ok ? weightMin.value : null,
+      weightMax: weightMax.ok ? weightMax.value : null,
+      seed: seed.ok ? seed.value : null,
+      exactEdges: exactEdges.ok ? exactEdges.value : null,
+      errors,
+    }
+  }, [weightMinText, weightMaxText, seedText, exactEdgesText, graphSource, edgeCountMode, topology])
 
   const generatorParams = useMemo(() => ({
     topology,
     vertices,
     densityPercent: density,
-    edgeCount: edgeCountMode === 'exact' && topology === 'erdos' ? exactEdges : undefined,
-    seed,
-    weightMin,
-    weightMax,
+    edgeCount: edgeCountMode === 'exact' && topology === 'erdos' && numericDrafts.exactEdges != null
+      ? numericDrafts.exactEdges
+      : undefined,
+    seed: numericDrafts.seed ?? 0,
+    weightMin: numericDrafts.weightMin ?? 0,
+    weightMax: numericDrafts.weightMax ?? 0,
     directed,
-  }), [topology, vertices, density, edgeCountMode, exactEdges, seed, weightMin, weightMax, directed])
+  }), [topology, vertices, density, edgeCountMode, numericDrafts, directed])
 
   const customPrep = useMemo(() => {
     try {
@@ -169,7 +219,7 @@ export default function Experiments() {
     } catch (error) {
       return { ok: false as const, message: error instanceof Error ? error.message : 'Błąd przygotowania grafu.' }
     }
-  }, [graphSource, libraryId, results])
+  }, [graphSource, libraryId])
 
   const expectedEdges = graphSource === 'generator'
     ? estimateEdgeCount(generatorParams)
@@ -177,11 +227,13 @@ export default function Experiments() {
       ? customPrep.facts.edges
       : 0
 
-  const validation = graphSource === 'generator'
-    ? validateGeneratorParams(generatorParams)
-    : customPrep
-      ? (customPrep.ok ? { ok: true as const } : { ok: false as const, message: customPrep.message })
-      : { ok: false as const, message: 'Nieprawidłowe źródło grafu.' }
+  const validation = numericDrafts.errors.length
+    ? { ok: false as const, message: numericDrafts.errors[0] }
+    : graphSource === 'generator'
+      ? validateGeneratorParams(generatorParams)
+      : customPrep
+        ? (customPrep.ok ? { ok: true as const } : { ok: false as const, message: customPrep.message })
+        : { ok: false as const, message: 'Nieprawidłowe źródło grafu.' }
 
   const factsForPreflight = useMemo(() => {
     if (graphSource === 'generator') {
@@ -189,15 +241,15 @@ export default function Experiments() {
         vertices,
         edges: expectedEdges,
         directed,
-        weightMin,
-        weightMax,
-        hasNegativeWeight: weightMin < 0,
-        undirectedNegativeImpliesCycle: !directed && weightMin < 0,
+        weightMin: numericDrafts.weightMin ?? 0,
+        weightMax: numericDrafts.weightMax ?? 0,
+        hasNegativeWeight: (numericDrafts.weightMin ?? 0) < 0,
+        undirectedNegativeImpliesCycle: !directed && (numericDrafts.weightMin ?? 0) < 0,
       }
     }
     if (customPrep && customPrep.ok) return customPrep.facts
     return null
-  }, [graphSource, vertices, expectedEdges, directed, weightMin, weightMax, customPrep])
+  }, [graphSource, vertices, expectedEdges, directed, numericDrafts.weightMin, numericDrafts.weightMax, customPrep])
 
   const preflight = useMemo(() => {
     if (!factsForPreflight) return []
@@ -384,6 +436,62 @@ export default function Experiments() {
 
   const chartRows = (lastBatch ?? []).filter(r => (r.status ?? 'ran') === 'ran')
   const maxMean = Math.max(...chartRows.map(r => r.mean), 0.001)
+
+  const exportSessionPng = async () => {
+    if (!sessionChartRef.current || !chartRows.length) {
+      setStatus('Brak wykresu sesji do eksportu PNG — najpierw uruchom eksperyment.')
+      return
+    }
+    try {
+      setExportBusy(true)
+      await exportElementPng(sessionChartRef.current, 'graphlab-eksperyment-wykres.png', { pixelRatio: 3 })
+      setStatus('Zapisano PNG wykresu sesji (wysoka rozdzielczość).')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Eksport PNG nie powiódł się.')
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  const exportSessionPdf = async () => {
+    const rows = lastBatch?.length ? lastBatch : results.slice(0, 50)
+    if (!rows.length) {
+      setStatus('Brak wyników do raportu PDF.')
+      return
+    }
+    try {
+      setExportBusy(true)
+      let chartDataUrl: string | null = null
+      if (sessionChartRef.current && chartRows.length) {
+        try {
+          chartDataUrl = await captureElementPngDataUrl(sessionChartRef.current, { pixelRatio: 2 })
+        } catch {
+          chartDataUrl = null
+        }
+      }
+      const sample = rows[0]
+      await exportBenchResultsPdf(rows, {
+        title: `Eksperyment GraphLab — ${sample.sourceLabel ?? topologyLabels[sample.topology]}`,
+        generatedAt: sample.timestamp,
+        graphParams: {
+          sourceLabel: sample.sourceLabel,
+          topology: topologyLabels[sample.topology],
+          vertices: sample.vertices,
+          edges: sample.edges,
+          density: sample.density,
+          directed: sample.directed,
+          seed: sample.seed,
+          repetitions: sample.repetitions,
+        },
+        notes: lastPair?.conclusions,
+      }, chartDataUrl)
+      setStatus('Zapisano raport PDF z wynikami eksperymentu.')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Eksport PDF nie powiódł się.')
+    } finally {
+      setExportBusy(false)
+    }
+  }
   const runIds = useMemo(() => {
     const ids = [...new Set(results.map(r => r.runId).filter(Boolean))] as string[]
     return ids.slice(0, 12)
@@ -425,12 +533,20 @@ export default function Experiments() {
       </div>
 
       {experimentsMode === 'research' ? (
-        <ResearchStudyPanel
-          onAppendBenchResults={rows => {
-            persistBenchResultsLocal(rows)
-            setResults(previous => [...rows, ...previous].slice(0, 200))
-          }}
-        />
+        <Suspense
+          fallback={(
+            <div className="panel" style={{ padding: 24, color: 'var(--muted, #aebbd0)' }}>
+              Ładowanie modułu badań porównawczych…
+            </div>
+          )}
+        >
+          <ResearchStudyPanel
+            onAppendBenchResults={rows => {
+              persistBenchResultsLocal(rows)
+              setResults(previous => [...rows, ...previous].slice(0, 200))
+            }}
+          />
+        </Suspense>
       ) : null}
 
       {experimentsMode === 'single' ? (
@@ -533,12 +649,19 @@ export default function Experiments() {
                         <input
                           className="bench-number"
                           id="bench-e"
-                          type="number"
-                          min={vertices - 1}
-                          max={MAX_EDGES}
-                          value={exactEdges}
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={exactEdgesText}
                           disabled={busy}
-                          onChange={e => setExactEdges(Number(e.target.value))}
+                          onChange={e => setExactEdgesText(acceptNumericDraft(exactEdgesText, e.target.value))}
+                          onBlur={() => {
+                            const parsed = parseIntField(exactEdgesText, {
+                              label: 'Liczba krawędzi',
+                              min: 1,
+                              max: MAX_EDGES,
+                            })
+                            if (parsed.ok) setExactEdgesText(String(parsed.value))
+                          }}
                         />
                       </>
                     )}
@@ -550,20 +673,30 @@ export default function Experiments() {
                     Waga min
                     <input
                       className="bench-number"
-                      type="number"
-                      value={weightMin}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={weightMinText}
                       disabled={busy}
-                      onChange={e => setWeightMin(Number(e.target.value))}
+                      onChange={e => setWeightMinText(acceptNumericDraft(weightMinText, e.target.value))}
+                      onBlur={() => {
+                        const parsed = parseIntField(weightMinText, { label: 'Waga min', integer: true })
+                        if (parsed.ok) setWeightMinText(String(parsed.value))
+                      }}
                     />
                   </label>
                   <label>
                     Waga max
                     <input
                       className="bench-number"
-                      type="number"
-                      value={weightMax}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={weightMaxText}
                       disabled={busy}
-                      onChange={e => setWeightMax(Number(e.target.value))}
+                      onChange={e => setWeightMaxText(acceptNumericDraft(weightMaxText, e.target.value))}
+                      onBlur={() => {
+                        const parsed = parseIntField(weightMaxText, { label: 'Waga max', integer: true })
+                        if (parsed.ok) setWeightMaxText(String(parsed.value))
+                      }}
                     />
                   </label>
                 </div>
@@ -577,11 +710,15 @@ export default function Experiments() {
                 <input
                   className="bench-number"
                   id="bench-seed"
-                  type="number"
-                  step={1}
-                  value={seed}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={seedText}
                   disabled={busy}
-                  onChange={e => setSeed(Number(e.target.value))}
+                  onChange={e => setSeedText(acceptNumericDraft(seedText, e.target.value))}
+                  onBlur={() => {
+                    const parsed = parseIntField(seedText, { label: 'Seed', integer: true })
+                    if (parsed.ok) setSeedText(String(parsed.value))
+                  }}
                 />
 
                 <p className="bench-hint">
@@ -606,7 +743,7 @@ export default function Experiments() {
             {!validation.ok && 'message' in validation && (
               <p className="bench-warning" role="alert">{validation.message}</p>
             )}
-            {weightMin < 0 && graphSource === 'generator' && (
+            {(numericDrafts.weightMin ?? 0) < 0 && graphSource === 'generator' && (
               <p className="bench-warning">
                 Wagi ujemne: Dijkstra zostanie pominięta. Na grafie nieskierowanym Bellman–Ford może wykryć ujemny cykl 2-krawędziowy.
               </p>
@@ -807,7 +944,11 @@ export default function Experiments() {
             </div>
 
             {chartRows.length > 0 && (
-              <div className="bench-pair-chart" aria-label="Porównanie średnich czasów (tylko wykonane)">
+              <div
+                className="bench-pair-chart"
+                ref={sessionChartRef}
+                aria-label="Porównanie średnich czasów (tylko wykonane)"
+              >
                 {chartRows.map(row => {
                   const width = Math.max(4, (row.mean / maxMean) * 100)
                   return (
@@ -867,8 +1008,19 @@ export default function Experiments() {
         <div className="panel-header">
           <h3><BarChart3 size={18} /> Historia eksperymentów ({results.length})</h3>
           <div className="bench-actions">
-            <button className="btn btn-outline" disabled={!results.length || busy} onClick={() => exportCSV(results)}>
-              <Download size={15} /> CSV
+            <button
+              className="btn btn-outline"
+              disabled={!chartRows.length || busy || exportBusy}
+              onClick={() => { void exportSessionPng() }}
+            >
+              <Download size={15} /> PNG
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={!results.length || busy || exportBusy}
+              onClick={() => { void exportSessionPdf() }}
+            >
+              <Download size={15} /> PDF
             </button>
             <button className="btn btn-outline" disabled={!results.length || busy} onClick={clear}>
               <Trash2 size={15} /> Wyczyść

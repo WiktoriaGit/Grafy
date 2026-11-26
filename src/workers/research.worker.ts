@@ -6,8 +6,9 @@
 import {
   algorithmLabels,
   graphDensityPercent,
-  measure,
+  measureAlgorithmsFair,
   skippedResult,
+  type AlgorithmId,
   type BenchResult,
 } from '../utils/benchmark'
 import { evaluateAlgorithmEligibility, inspectBenchGraph } from '../utils/benchEligibility'
@@ -16,7 +17,12 @@ import {
   isConnectedUndirectedView,
   validateGeneratorParams,
 } from '../utils/largeGraphs'
-import { verifyNonNegativeShortestPaths } from '../utils/pairCompare'
+import {
+  invalidateBenchResult,
+  verifyMstWeights,
+  verifyNonNegativeShortestPaths,
+  verifyReachableSets,
+} from '../utils/pairCompare'
 import type {
   ResearchCasePlan,
   ResearchCaseResult,
@@ -121,55 +127,82 @@ self.onmessage = (event: MessageEvent<ResearchRequest>) => {
       }
 
       const results: BenchResult[] = []
-      for (let algoIndex = 0; algoIndex < item.algorithms.length; algoIndex++) {
-        const id = item.algorithms[algoIndex]
+      const eligible: AlgorithmId[] = []
+      for (const id of item.algorithms) {
         const eligibility = evaluateAlgorithmEligibility(id, facts)
+        if (!eligibility.ok) {
+          send({
+            type: 'progress',
+            message: `Pominięto ${algorithmLabels[id]}: ${eligibility.reason}`,
+            percent: percentBase + 5,
+            caseIndex: index + 1,
+            caseTotal: total,
+          })
+          results.push(skippedResult(graph, id, eligibility.reason, metaBase, 'skipped'))
+        } else {
+          eligible.push(id)
+        }
+      }
+
+      if (eligible.length) {
         send({
           type: 'progress',
-          message: eligibility.ok
-            ? `Pomiar ${algorithmLabels[id]} na „${item.label}” (${config.repetitions} powtórzeń)...`
-            : `Pominięto ${algorithmLabels[id]}: ${eligibility.reason}`,
-          percent: percentBase + 5 + Math.round(((algoIndex + 1) / item.algorithms.length) * (90 / total)),
+          message: `Fair measurement (${eligible.map(id => algorithmLabels[id]).join(' · ')}) na „${item.label}” (${config.repetitions} powtórzeń)...`,
+          percent: percentBase + 40,
           caseIndex: index + 1,
           caseTotal: total,
         })
-        if (!eligibility.ok) {
-          results.push(skippedResult(graph, id, eligibility.reason, metaBase, 'skipped'))
-          continue
+        const measured = measureAlgorithmsFair(graph, eligible, config.repetitions, metaBase)
+        const byId = new Map(measured.map(r => [r.algorithm, r]))
+        const merged: BenchResult[] = []
+        for (const id of item.algorithms) {
+          const fromSkipped = results.find(r => r.algorithm === id)
+          if (fromSkipped) merged.push(fromSkipped)
+          else {
+            const m = byId.get(id)
+            if (m) merged.push(m)
+          }
         }
-        results.push(measure(graph, id, config.repetitions, metaBase))
+        results.length = 0
+        results.push(...merged)
       }
 
-      // Zgodność odległości na tym samym grafie (gdy obie ścieżki najkrótsze się wykonały).
+      // Weryfikacje poprawności — poza pętlą measure (nie wchodzą w czasy).
       const ranIds = new Set(results.filter(r => (r.status ?? 'ran') === 'ran').map(r => r.algorithm))
       if (ranIds.has('dijkstra') && ranIds.has('bellman') && facts.weightMin >= 0) {
         const agreement = verifyNonNegativeShortestPaths(graph, 0)
         if (!agreement.ok) {
           for (let i = 0; i < results.length; i++) {
             if (results[i].algorithm === 'dijkstra' || results[i].algorithm === 'bellman') {
-              results[i] = {
-                ...results[i],
-                status: 'error',
-                skipReason: `Niezgodność wyników najkrótszych ścieżek: ${agreement.message}`,
-                mean: 0,
-                median: 0,
-                min: 0,
-                max: 0,
-                stdDev: 0,
-              }
+              results[i] = invalidateBenchResult(
+                results[i],
+                `Niezgodność wyników najkrótszych ścieżek: ${agreement.message}`,
+              )
             }
           }
         }
       }
 
-      // Zgodność wagi MST (Prim vs Kruskal) — dopuszczalne różne zestawy krawędzi przy remisach.
+      if (ranIds.has('bfs') && ranIds.has('dfs')) {
+        const agreement = verifyReachableSets(graph, 0)
+        if (!agreement.ok) {
+          for (let i = 0; i < results.length; i++) {
+            if (results[i].algorithm === 'bfs' || results[i].algorithm === 'dfs') {
+              results[i] = invalidateBenchResult(results[i], agreement.message)
+            }
+          }
+        }
+      }
+
       if (ranIds.has('prim') && ranIds.has('kruskal')) {
-        const prim = results.find(r => r.algorithm === 'prim')
-        const kruskal = results.find(r => r.algorithm === 'kruskal')
-        // Operacje nie niosą wagi MST w BenchResult; weryfikacja wag jest w testach jednostkowych.
-        // Tu oznaczamy tylko, że oba pomiary na tym samym grafie zakończyły się statusem ran.
-        void prim
-        void kruskal
+        const agreement = verifyMstWeights(graph, 0)
+        if (!agreement.ok) {
+          for (let i = 0; i < results.length; i++) {
+            if (results[i].algorithm === 'prim' || results[i].algorithm === 'kruskal') {
+              results[i] = invalidateBenchResult(results[i], agreement.message)
+            }
+          }
+        }
       }
 
       cases.push({

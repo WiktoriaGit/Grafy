@@ -46,10 +46,10 @@ const initialEdges: Edge[] = connections.map(([source, target, weight]) => {
     animated: active,
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: active ? '#818cf8' : '#64748b',
+      color: active ? '#A78BFA' : '#64748b',
     },
     style: {
-      stroke: active ? '#818cf8' : '#475569',
+      stroke: active ? '#A78BFA' : '#475569',
       strokeWidth: active ? 2.8 : 1.7,
     },
     labelStyle: {
@@ -58,7 +58,7 @@ const initialEdges: Edge[] = connections.map(([source, target, weight]) => {
       fontWeight: 600,
     },
     labelBgStyle: {
-      fill: '#172033',
+      fill: '#1C1C24',
       fillOpacity: 0.95,
     },
     labelBgPadding: [6, 4],
@@ -79,10 +79,10 @@ export default function DemoGraph() {
         width: 56,
         height: 56,
         borderRadius: '50%',
-        background: onPath ? '#4f46e5' : '#1e293b',
-        color: '#fff',
-        border: `2px solid ${onPath ? '#a5b4fc' : '#475569'}`,
-        boxShadow: onPath ? '0 0 25px rgba(99,102,241,.28)' : 'none',
+        background: onPath ? '#A78BFA' : '#1C1C24',
+        color: '#F4F4F5',
+        border: `2px solid ${onPath ? '#C4B5FD' : '#33333F'}`,
+        boxShadow: 'none',
         fontSize: 17,
         fontWeight: 700,
         display: 'flex',
@@ -117,7 +117,7 @@ export default function DemoGraph() {
           variant={BackgroundVariant.Dots}
           gap={22}
           size={1}
-          color="#334155"
+          color="#33333F"
         />
         <Controls showInteractive={false} />
       </ReactFlow>

@@ -1,6 +1,8 @@
 import {
   algorithmLabels,
   dijkstraHeap,
+  kruskalUnionFind,
+  primHeap,
   runBenchmarkAlgorithm,
   type AlgorithmId,
   type BenchGraph,
@@ -13,6 +15,31 @@ export type DistanceAgreement = {
   checked: number
   mismatches: number
   message: string
+}
+
+export type ReachableAgreement = {
+  ok: boolean
+  checked: number
+  mismatches: number
+  message: string
+}
+
+export type MstWeightAgreement = {
+  ok: boolean
+  primWeight: number
+  kruskalWeight: number
+  primEdges: number
+  kruskalEdges: number
+  message: string
+}
+
+/** Oznacza wynik jako error bez kasowania zmierzonych czasów (I1). */
+export function invalidateBenchResult(row: BenchResult, reason: string): BenchResult {
+  return {
+    ...row,
+    status: 'error',
+    skipReason: reason,
+  }
 }
 
 export type PairComparison = {
@@ -117,6 +144,66 @@ export function verifyNonNegativeShortestPaths(graph: BenchGraph, source = 0): D
     message: mismatches === 0
       ? `Zgodność odległości Dijkstra/Bellman–Ford: wszystkie ${n} wierzchołków (źródło ${source}).`
       : `Niezgodność odległości: ${mismatches} z ${n} wierzchołków różni się między Dijkstrą a Bellmanem–Fordem.`,
+  }
+}
+
+/** Zbiór osiągalny BFS vs DFS — poza pomiarem czasu (C2). */
+export function collectReachableMask(graph: BenchGraph, source: number, mode: 'bfs' | 'dfs'): Uint8Array {
+  const n = graph.adjacency.length
+  const seen = new Uint8Array(n)
+  if (!Number.isInteger(source) || source < 0 || source >= n) return seen
+  const queue = [source]
+  seen[source] = 1
+  let head = 0
+  while (mode === 'bfs' ? head < queue.length : queue.length > 0) {
+    const v = mode === 'bfs' ? queue[head++] : queue.pop()!
+    for (const e of graph.adjacency[v]) {
+      if (!seen[e.to]) {
+        seen[e.to] = 1
+        queue.push(e.to)
+      }
+    }
+  }
+  return seen
+}
+
+export function verifyReachableSets(graph: BenchGraph, source = 0): ReachableAgreement {
+  const n = graph.adjacency.length
+  if (!Number.isInteger(source) || source < 0 || source >= n) {
+    return { ok: false, checked: 0, mismatches: 0, message: 'Nieprawidłowe źródło weryfikacji osiągalności.' }
+  }
+  const bfs = collectReachableMask(graph, source, 'bfs')
+  const dfs = collectReachableMask(graph, source, 'dfs')
+  let mismatches = 0
+  for (let i = 0; i < n; i++) {
+    if (bfs[i] !== dfs[i]) mismatches++
+  }
+  return {
+    ok: mismatches === 0,
+    checked: n,
+    mismatches,
+    message: mismatches === 0
+      ? `Zgodność zbiorów osiągalnych BFS/DFS: ${n} wierzchołków (źródło ${source}).`
+      : `Niezgodność zbiorów osiągalnych BFS/DFS: ${mismatches} z ${n} wierzchołków.`,
+  }
+}
+
+/** Waga MST/MSF Prim vs Kruskal — poza pomiarem czasu (C1). */
+export function verifyMstWeights(graph: BenchGraph, source = 0): MstWeightAgreement {
+  const prim = primHeap(graph, source)
+  const kruskal = kruskalUnionFind(graph)
+  const scale = Math.max(1, Math.abs(prim.mstWeight), Math.abs(kruskal.mstWeight))
+  const eps = 1e-9 * scale + 1e-6
+  const ok = Math.abs(prim.mstWeight - kruskal.mstWeight) <= eps
+  return {
+    ok,
+    primWeight: prim.mstWeight,
+    kruskalWeight: kruskal.mstWeight,
+    primEdges: prim.edgesUsed,
+    kruskalEdges: kruskal.edgesUsed,
+    message: ok
+      ? `Zgodność wagi MST/MSF Prim/Kruskal: ${prim.mstWeight} (krawędzie ${prim.edgesUsed}/${kruskal.edgesUsed}).`
+      : `Niezgodność wagi MST/MSF: Prim=${prim.mstWeight} (E=${prim.edgesUsed}), Kruskal=${kruskal.mstWeight} (E=${kruskal.edgesUsed}).`,
   }
 }
 

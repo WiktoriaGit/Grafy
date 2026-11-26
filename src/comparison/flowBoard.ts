@@ -56,21 +56,21 @@ export function buildPathFlow(
     const background = onPath
       ? '#059669'
       : active
-        ? '#7c3aed'
+        ? '#A78BFA'
         : visited
-          ? '#3730a3'
+          ? '#2A2440'
           : inFrontier
             ? '#1d4ed8'
-            : '#24324c'
+            : '#1C1C24'
     const border = onPath
       ? '#6ee7b7'
       : active
-        ? '#ddd6fe'
+        ? '#C4B5FD'
         : visited
-          ? '#a5b4fc'
+          ? '#A78BFA'
           : inFrontier
             ? '#93c5fd'
-            : '#52647f'
+            : '#33333F'
 
     return {
       id: node.id,
@@ -83,10 +83,10 @@ export function buildPathFlow(
         display: 'grid',
         placeItems: 'center',
         fontWeight: 700,
-        color: '#fff',
+        color: '#F4F4F5',
         background,
         border: `2px solid ${border}`,
-        boxShadow: active ? '0 0 18px #8b5cf699' : inFrontier ? '0 0 14px #3b82f666' : 'none',
+        boxShadow: active ? '0 0 0 2px rgba(167,139,250,0.35)' : inFrontier ? '0 0 0 2px rgba(96,165,250,0.3)' : 'none',
       },
     }
   })
@@ -94,7 +94,7 @@ export function buildPathFlow(
   const edges: Edge[] = document.edges.map((edge, index) => {
     const highlighted = edgeMatches(step?.activeEdge, edge.source, edge.target, document.directed)
     const onPath = showPath && pathUsesEdge(path, edge.source, edge.target, document.directed)
-    const color = onPath ? '#34d399' : highlighted ? '#c4b5fd' : '#64748b'
+    const color = onPath ? '#34d399' : highlighted ? '#A78BFA' : '#64748b'
     return {
       id: `cmp-path-${index}`,
       source: edge.source,
@@ -105,7 +105,7 @@ export function buildPathFlow(
       style: { stroke: color, strokeWidth: highlighted || onPath ? 3.2 : 1.7 },
       markerEnd: document.directed ? { type: MarkerType.ArrowClosed, color } : undefined,
       labelStyle: { fill: '#e2e8f0', fontWeight: 700, fontSize: 11 },
-      labelBgStyle: { fill: '#17243a' },
+      labelBgStyle: { fill: '#1C1C24' },
     }
   })
 
@@ -130,8 +130,8 @@ export function buildMstFlow(
         placeItems: 'center',
         fontWeight: 700,
         color: '#fff',
-        background: visited ? '#145c4b' : '#24324c',
-        border: `2px solid ${visited ? '#34d399' : '#52647f'}`,
+        background: visited ? '#2A2440' : '#1C1C24',
+        border: `2px solid ${visited ? '#34d399' : '#33333F'}`,
       },
     }
   })
@@ -150,7 +150,7 @@ export function buildMstFlow(
       animated: considered,
       style: { stroke: color, strokeWidth: chosen || considered || candidate ? 3.2 : 1.7 },
       labelStyle: { fill: '#e2e8f0', fontWeight: 700, fontSize: 11 },
-      labelBgStyle: { fill: '#17243a' },
+      labelBgStyle: { fill: '#1C1C24' },
     }
   })
 

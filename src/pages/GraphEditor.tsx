@@ -570,7 +570,13 @@ export default function GraphEditor() {
               <div className="ge-weight">
                 <label htmlFor="edge-weight">Waga wybranej krawędzi</label>
                 <div>
-                  <input id="edge-weight" type="number" step="any" value={weight} onChange={e => setWeight(e.target.value)} />
+                  <input
+                    id="edge-weight"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={weight}
+                    onChange={e => setWeight(e.target.value)}
+                  />
                   <button type="button" onClick={updateWeight}>Zapisz</button>
                 </div>
               </div>
@@ -722,7 +728,7 @@ export default function GraphEditor() {
               selectionOnDrag={toolMode === 'select'}
               proOptions={{ hideAttribution: true }}
             >
-              <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#334155" />
+              <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#33333F" />
               <Controls showInteractive={false} />
             </ReactFlow>
           </div>

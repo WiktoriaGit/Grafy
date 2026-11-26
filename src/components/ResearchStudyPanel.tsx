@@ -22,6 +22,8 @@ import {
 import { algorithmLabels, type AlgorithmId, type BenchResult } from '../utils/benchmark'
 import { PROBLEM_GROUP_LABELS, type AlgorithmProblemGroup } from '../utils/benchEligibility'
 import {
+  MAX_EDGES,
+  MAX_VERTICES,
   RESEARCH_TOPOLOGIES,
   topologyLabels,
   type GraphTopology,
@@ -47,11 +49,45 @@ import {
   type ResearchStudy,
   type StudyKind,
 } from '../utils/researchStudy'
-import { persistBenchResultsLocal, persistResearchStudyLocal } from '../services/persistence'
+import { persistResearchStudyLocal } from '../services/persistence'
+import {
+  captureElementPngDataUrl,
+  exportElementPng,
+  exportResearchStudyPdf,
+} from '../utils/experimentExport'
+import {
+  acceptNumberListDraft,
+  acceptNumericDraft,
+  formatNumberList,
+  parseIntField,
+  parseNumberList,
+} from '../utils/numericInput'
 import './ResearchStudyPanel.css'
 
+type ResearchDrafts = {
+  vertexSizes: string
+  edgeSweep: string
+  densitySweep: string
+  vertices: string
+  densityPercent: string
+  repetitions: string
+  seed: string
+}
+
+function draftsFromConfig(c: ResearchConfig): ResearchDrafts {
+  return {
+    vertexSizes: formatNumberList(c.vertexSizes),
+    edgeSweep: formatNumberList(c.edgeSweep),
+    densitySweep: formatNumberList(c.densitySweep),
+    vertices: String(c.vertices),
+    densityPercent: String(c.densityPercent),
+    repetitions: String(c.repetitions),
+    seed: String(c.seed),
+  }
+}
+
 const colors: Record<AlgorithmId, string> = {
-  bfs: '#a5b4fc',
+  bfs: '#A78BFA',
   dfs: '#34d399',
   dijkstra: '#38bdf8',
   bellman: '#fbbf24',
@@ -74,12 +110,18 @@ type Props = {
 
 export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
   const [config, setConfig] = useState<ResearchConfig>(defaultResearchConfig)
+  const [drafts, setDrafts] = useState<ResearchDrafts>(() => draftsFromConfig(defaultResearchConfig()))
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('Skonfiguruj serię i uruchom badania porównawcze.')
   const [study, setStudy] = useState<ResearchStudy | null>(null)
   const [saved, setSaved] = useState<ResearchStudy[]>(() => loadResearchStudies())
+  const [exportBusy, setExportBusy] = useState(false)
   const workerRef = useRef<Worker | null>(null)
+  const chartRef = useRef<HTMLDivElement | null>(null)
+
+  // Zachowujemy funkcję CSV w kodzie (ukryta w UI).
+  void exportResearchCSV
 
   const plan = useMemo(() => buildResearchPlan(config), [config])
   const warnings = useMemo(() => warnAboutCostlyCases(config, plan), [config, plan])
@@ -111,6 +153,111 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
     setConfig(prev => ({ ...prev, [key]: value }))
   }
 
+  const patchDraft = <K extends keyof ResearchDrafts>(key: K, value: string) => {
+    setDrafts(prev => ({ ...prev, [key]: value }))
+  }
+
+  const applyConfig = (next: ResearchConfig) => {
+    setConfig(next)
+    setDrafts(draftsFromConfig(next))
+  }
+
+  /** Zatwierdza drafty do config. Zwraca gotową konfigurację albo null + komunikat. */
+  const commitDrafts = (): ResearchConfig | null => {
+    const next: ResearchConfig = { ...config }
+
+    if (config.studyKind === 'vertices') {
+      const sizes = parseNumberList(drafts.vertexSizes, {
+        label: 'Zakres V',
+        min: 2,
+        max: MAX_VERTICES,
+        minCount: 1,
+      })
+      if (!sizes.ok) {
+        setStatus(sizes.message)
+        return null
+      }
+      next.vertexSizes = sizes.value
+
+      const density = parseIntField(drafts.densityPercent, {
+        label: 'Gęstość bazowa (%)',
+        min: 1,
+        max: 100,
+      })
+      if (!density.ok) {
+        setStatus(density.message)
+        return null
+      }
+      next.densityPercent = density.value
+    }
+
+    if (config.studyKind === 'edges' || config.studyKind === 'density' || config.studyKind === 'structure') {
+      const vertices = parseIntField(drafts.vertices, {
+        label: 'Liczba wierzchołków V',
+        min: 2,
+        max: MAX_VERTICES,
+      })
+      if (!vertices.ok) {
+        setStatus(vertices.message)
+        return null
+      }
+      next.vertices = vertices.value
+    }
+
+    if (config.studyKind === 'edges') {
+      const edges = parseNumberList(drafts.edgeSweep, {
+        label: 'Zakres E',
+        min: 1,
+        max: MAX_EDGES,
+        minCount: 1,
+      })
+      if (!edges.ok) {
+        setStatus(edges.message)
+        return null
+      }
+      next.edgeSweep = edges.value
+    }
+
+    if (config.studyKind === 'density') {
+      const dens = parseNumberList(drafts.densitySweep, {
+        label: 'Zakres gęstości %',
+        min: 1,
+        max: 100,
+        minCount: 1,
+      })
+      if (!dens.ok) {
+        setStatus(dens.message)
+        return null
+      }
+      next.densitySweep = dens.value
+    }
+
+    const repetitions = parseIntField(drafts.repetitions, {
+      label: 'Powtórzenia',
+      min: 1,
+      max: 100,
+    })
+    if (!repetitions.ok) {
+      setStatus(repetitions.message)
+      return null
+    }
+    next.repetitions = repetitions.value
+
+    const seed = parseIntField(drafts.seed, {
+      label: 'Seed',
+      min: 0,
+      max: 2_147_483_647,
+    })
+    if (!seed.ok) {
+      setStatus(seed.message)
+      return null
+    }
+    next.seed = seed.value
+
+    applyConfig(next)
+    return next
+  }
+
   const cancel = () => {
     workerRef.current?.terminate()
     workerRef.current = null
@@ -124,16 +271,21 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
       setStatus('Podaj nazwę serii badawczej.')
       return
     }
-    if (!plan.length) {
+    const committed = commitDrafts()
+    if (!committed) return
+
+    const committedPlan = buildResearchPlan(committed)
+    if (!committedPlan.length) {
       setStatus('Plan jest pusty — zmień parametry.')
       return
     }
-    const executable = plan.filter(p => !p.warning)
+    const executable = committedPlan.filter(p => !p.warning)
     if (!executable.length) {
       setStatus('Żaden przypadek nie jest wykonywalny przy obecnych limitach bezpieczeństwa.')
       return
     }
-    if (warnings.length && !window.confirm(`${warnings.join('\n\n')}\n\nKontynuować mimo ostrzeżeń?`)) {
+    const committedWarnings = warnAboutCostlyCases(committed, committedPlan)
+    if (committedWarnings.length && !window.confirm(`${committedWarnings.join('\n\n')}\n\nKontynuować mimo ostrzeżeń?`)) {
       return
     }
 
@@ -164,7 +316,7 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
       if (message.type === 'complete' && message.config && message.plan && message.cases) {
         const draft: ResearchStudy = {
           id: message.studyId || studyId,
-          name: message.name || config.name,
+          name: message.name || committed.name,
           createdAt: new Date().toISOString(),
           config: message.config,
           plan: message.plan,
@@ -177,11 +329,13 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
         const suggested = suggestHypothesisVerdict(draft)
         draft.hypothesisVerdict = suggested.verdict
         draft.hypothesisNote = suggested.note
+        draft.updatedAt = new Date().toISOString()
+        persistResearchStudyLocal(draft)
         setStudy(draft)
         const flat = draft.cases.flatMap(c => c.results)
         onAppendBenchResults?.(flat)
         setProgress(100)
-        setStatus(`Zakończono serię „${draft.name}”: ${draft.cases.length} przypadków.`)
+        setStatus(`Zakończono serię „${draft.name}”: ${draft.cases.length} przypadków (zapis lokalny + sync SQLite).`)
       } else if (message.type === 'error') {
         setStatus(message.message || 'Błąd serii badań.')
         setProgress(0)
@@ -201,9 +355,9 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
 
     worker.postMessage({
       studyId,
-      name: config.name.trim(),
-      config,
-      plan,
+      name: committed.name.trim(),
+      config: committed,
+      plan: committedPlan,
     })
   }
 
@@ -221,7 +375,7 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
     const found = saved.find(s => s.id === id)
     if (!found) return
     setStudy(found)
-    setConfig(found.config)
+    applyConfig(found.config)
     setStatus(`Wczytano zapisane badanie „${found.name}”. Możesz je odtworzyć tymi samymi parametrami.`)
   }
 
@@ -241,11 +395,46 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
     })
   }
 
-  const exportPngHint = () => {
-    setStatus(
-      'Eksport PNG: użyj zrzutu ekranu wykresu lub narzędzi przeglądarki. '
-      + 'Dane i metadane badania eksportuj do CSV/JSON (zalecane do dokumentacji pracy).',
-    )
+  const exportPng = async () => {
+    if (!study || !chartRef.current) {
+      setStatus('Brak wykresu do eksportu PNG — uruchom serię badań.')
+      return
+    }
+    try {
+      setExportBusy(true)
+      setStatus('Eksport PNG w wysokiej rozdzielczości…')
+      await exportElementPng(chartRef.current, `${study.name}-wykres.png`, { pixelRatio: 3 })
+      setStatus(`Zapisano PNG wykresu dla „${study.name}” (pixelRatio=3).`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Nie udało się wyeksportować PNG.')
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  const exportPdf = async () => {
+    if (!study) {
+      setStatus('Brak ukończonego badania do raportu PDF.')
+      return
+    }
+    try {
+      setExportBusy(true)
+      setStatus('Generowanie raportu PDF…')
+      let chartDataUrl: string | null = null
+      if (chartRef.current) {
+        try {
+          chartDataUrl = await captureElementPngDataUrl(chartRef.current, { pixelRatio: 2 })
+        } catch {
+          chartDataUrl = null
+        }
+      }
+      await exportResearchStudyPdf(study, chartDataUrl)
+      setStatus(`Zapisano raport PDF dla „${study.name}”.`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Nie udało się wygenerować PDF.')
+    } finally {
+      setExportBusy(false)
+    }
   }
 
   return (
@@ -315,11 +504,17 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
                 <input
                   id="res-vsizes"
                   disabled={busy}
-                  value={config.vertexSizes.join(', ')}
-                  onChange={e => patch(
-                    'vertexSizes',
-                    e.target.value.split(/[,\s]+/).map(Number).filter(n => Number.isFinite(n) && n >= 2),
-                  )}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={drafts.vertexSizes}
+                  onChange={e => patchDraft('vertexSizes', acceptNumberListDraft(drafts.vertexSizes, e.target.value))}
+                  onBlur={() => {
+                    const parsed = parseNumberList(drafts.vertexSizes, { label: 'Zakres V', min: 2, max: MAX_VERTICES, minCount: 1 })
+                    if (parsed.ok) {
+                      patch('vertexSizes', parsed.value)
+                      patchDraft('vertexSizes', formatNumberList(parsed.value))
+                    }
+                  }}
                 />
                 <p className="research-hint">V = liczba wierzchołków. Dla Bellmana–Forda bezpiecznie ≤ 1000.</p>
               </>
@@ -330,10 +525,18 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
                 <label htmlFor="res-v">Stała liczba wierzchołków V</label>
                 <input
                   id="res-v"
-                  type="number"
                   disabled={busy}
-                  value={config.vertices}
-                  onChange={e => patch('vertices', Number(e.target.value))}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={drafts.vertices}
+                  onChange={e => patchDraft('vertices', acceptNumericDraft(drafts.vertices, e.target.value))}
+                  onBlur={() => {
+                    const parsed = parseIntField(drafts.vertices, { label: 'V', min: 2, max: MAX_VERTICES })
+                    if (parsed.ok) {
+                      patch('vertices', parsed.value)
+                      patchDraft('vertices', String(parsed.value))
+                    }
+                  }}
                 />
               </>
             )}
@@ -344,11 +547,17 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
                 <input
                   id="res-esweep"
                   disabled={busy}
-                  value={config.edgeSweep.join(', ')}
-                  onChange={e => patch(
-                    'edgeSweep',
-                    e.target.value.split(/[,\s]+/).map(Number).filter(n => Number.isFinite(n) && n >= 1),
-                  )}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={drafts.edgeSweep}
+                  onChange={e => patchDraft('edgeSweep', acceptNumberListDraft(drafts.edgeSweep, e.target.value))}
+                  onBlur={() => {
+                    const parsed = parseNumberList(drafts.edgeSweep, { label: 'Zakres E', min: 1, max: MAX_EDGES, minCount: 1 })
+                    if (parsed.ok) {
+                      patch('edgeSweep', parsed.value)
+                      patchDraft('edgeSweep', formatNumberList(parsed.value))
+                    }
+                  }}
                 />
                 <p className="research-hint">E = liczba krawędzi przy stałym V (generator Erdős–Rényi, spójny).</p>
               </>
@@ -360,11 +569,17 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
                 <input
                   id="res-dsweep"
                   disabled={busy}
-                  value={config.densitySweep.join(', ')}
-                  onChange={e => patch(
-                    'densitySweep',
-                    e.target.value.split(/[,\s]+/).map(Number).filter(n => Number.isFinite(n) && n > 0 && n <= 100),
-                  )}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={drafts.densitySweep}
+                  onChange={e => patchDraft('densitySweep', acceptNumberListDraft(drafts.densitySweep, e.target.value))}
+                  onBlur={() => {
+                    const parsed = parseNumberList(drafts.densitySweep, { label: 'Zakres gęstości %', min: 1, max: 100, minCount: 1 })
+                    if (parsed.ok) {
+                      patch('densitySweep', parsed.value)
+                      patchDraft('densitySweep', formatNumberList(parsed.value))
+                    }
+                  }}
                 />
                 <p className="research-hint">
                   Gęstość ≈ E / E<sub>max</sub> · 100%. Nie mylić z surową liczbą krawędzi.
@@ -377,10 +592,18 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
                 <label htmlFor="res-den">Gęstość bazowa (%)</label>
                 <input
                   id="res-den"
-                  type="number"
                   disabled={busy || config.topology === 'sparse' || config.topology === 'dense' || config.topology === 'complete'}
-                  value={config.densityPercent}
-                  onChange={e => patch('densityPercent', Number(e.target.value))}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={drafts.densityPercent}
+                  onChange={e => patchDraft('densityPercent', acceptNumericDraft(drafts.densityPercent, e.target.value))}
+                  onBlur={() => {
+                    const parsed = parseIntField(drafts.densityPercent, { label: 'Gęstość bazowa (%)', min: 1, max: 100 })
+                    if (parsed.ok) {
+                      patch('densityPercent', parsed.value)
+                      patchDraft('densityPercent', String(parsed.value))
+                    }
+                  }}
                 />
               </>
             )}
@@ -389,21 +612,35 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
               <label>
                 Powtórzenia
                 <input
-                  type="number"
-                  min={1}
-                  max={100}
                   disabled={busy}
-                  value={config.repetitions}
-                  onChange={e => patch('repetitions', Number(e.target.value))}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={drafts.repetitions}
+                  onChange={e => patchDraft('repetitions', acceptNumericDraft(drafts.repetitions, e.target.value))}
+                  onBlur={() => {
+                    const parsed = parseIntField(drafts.repetitions, { label: 'Powtórzenia', min: 1, max: 100 })
+                    if (parsed.ok) {
+                      patch('repetitions', parsed.value)
+                      patchDraft('repetitions', String(parsed.value))
+                    }
+                  }}
                 />
               </label>
               <label>
                 Seed
                 <input
-                  type="number"
                   disabled={busy}
-                  value={config.seed}
-                  onChange={e => patch('seed', Number(e.target.value))}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={drafts.seed}
+                  onChange={e => patchDraft('seed', acceptNumericDraft(drafts.seed, e.target.value))}
+                  onBlur={() => {
+                    const parsed = parseIntField(drafts.seed, { label: 'Seed', min: 0, max: 2_147_483_647 })
+                    if (parsed.ok) {
+                      patch('seed', parsed.value)
+                      patchDraft('seed', String(parsed.value))
+                    }
+                  }}
                 />
               </label>
             </div>
@@ -477,19 +714,16 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
                 <button
                   type="button"
                   className="btn btn-outline"
+                  disabled={exportBusy}
                   onClick={() => downloadTextFile(`${study.name}.json`, exportResearchJSON(study), 'application/json')}
                 >
                   <Download size={14} /> JSON
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => downloadTextFile(`${study.name}.csv`, exportResearchCSV(study), 'text/csv')}
-                >
-                  <Download size={14} /> CSV
+                <button type="button" className="btn btn-outline" disabled={exportBusy} onClick={() => { void exportPng() }}>
+                  <Download size={14} /> PNG
                 </button>
-                <button type="button" className="btn btn-outline" onClick={exportPngHint}>
-                  PNG (zrzut)
+                <button type="button" className="btn btn-primary" disabled={exportBusy} onClick={() => { void exportPdf() }}>
+                  <Download size={14} /> PDF
                 </button>
               </div>
             </div>
@@ -546,7 +780,7 @@ export default function ResearchStudyPanel({ onAppendBenchResults }: Props) {
                 Średni czas [ms] · n={study.config.repetitions} powtórzeń · {STUDY_KIND_LABELS[study.config.studyKind]}
               </span>
             </div>
-            <div className="research-chart">
+            <div className="research-chart" ref={chartRef}>
               <ResponsiveContainer width="100%" height={320}>
                 {study.config.studyKind === 'structure' ? (
                   <BarChart data={chartByX}>
