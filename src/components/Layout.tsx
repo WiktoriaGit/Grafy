@@ -83,13 +83,14 @@ export default function Layout() {
           {!collapsed && (
             <div className="brand-text">
               <strong>Graph<span>Lab</span></strong>
-              <small>ANALYSIS LAB</small>
+              <small>LABORATORIUM</small>
             </div>
           )}
           <button
             className="icon-button collapse-button"
             onClick={() => setCollapsed(!collapsed)}
             title="Zwiń lub rozwiń menu"
+            aria-label="Zwiń lub rozwiń menu"
           >
             <PanelLeftClose size={18} />
           </button>
@@ -139,7 +140,7 @@ export default function Layout() {
             >
               <Menu size={21} />
             </button>
-            <span className="breadcrumb-root">Workspace</span>
+            <span className="breadcrumb-root">Obszar roboczy</span>
             <ChevronRight size={15} className="breadcrumb-separator" />
             <span className="breadcrumb-current">{title}</span>
           </div>
@@ -149,10 +150,12 @@ export default function Layout() {
               type="button"
               className={`topbar-status db-status db-status-${dbStatus}`}
               title={dbDetail}
+              aria-label={`Status bazy: ${statusLabel[dbStatus]}. ${dbDetail}`}
               onClick={() => { void syncAll() }}
             >
               <span className="status-dot" />
-              Baza: {statusLabel[dbStatus]}
+              <span className="db-status-full">Baza: {statusLabel[dbStatus]}</span>
+              <span className="db-status-short" aria-hidden="true">{statusLabel[dbStatus]}</span>
               <RefreshCw size={13} />
             </button>
             <div className="topbar-divider" />

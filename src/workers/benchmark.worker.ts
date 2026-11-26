@@ -132,7 +132,7 @@ self.onmessage = (event: MessageEvent<BenchmarkRequest>) => {
     if (eligible.length) {
       send({
         type: 'progress',
-        message: `Fair measurement (${eligible.map(id => algorithmLabels[id]).join(' · ')}), ${data.repetitions} powtórzeń`,
+        message: `Pomiar naprzemienny (${eligible.map(id => algorithmLabels[id]).join(' · ')}), ${data.repetitions} powtórzeń`,
         percent: 55,
       })
       const measured = measureAlgorithmsFair(graph, eligible, data.repetitions, metaBase)

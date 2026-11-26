@@ -73,7 +73,7 @@ type ExperimentsMode = 'single' | 'research'
 
 const fmt = (n: number) => n.toLocaleString('pl-PL', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 const OPERATIONS_HINT =
-  'Operacje benchmarku: licznik wewnętrznych przejść/relaksacji w lean-implementacji Web Workera (nie kroki animacji).'
+  'Operacje benchmarku: licznik wewnętrznych przejść/relaksacji w uproszczonej implementacji pomiarowej (Web Worker; bez kroków animacji).'
 
 // Logika CSV pozostaje w kodzie — przycisk UI jest ukryty.
 void exportCSV
@@ -501,10 +501,10 @@ export default function Experiments() {
     <div className="page-container">
       <div className="page-heading">
         <div>
-          <div className="eyebrow"><FlaskConical size={14} /> PERFORMANCE LAB</div>
+          <div className="eyebrow"><FlaskConical size={14} /> LABORATORIUM POMIARÓW</div>
           <h1>Eksperymenty wydajnościowe</h1>
           <p>
-            Benchmark mierzy lean-implementacje z <code>benchmark.ts</code> w Web Workerze — bez kroków animacji i bez React Flow.
+            Benchmark mierzy uproszczone implementacje pomiarowe z <code>benchmark.ts</code> w Web Workerze — bez kroków animacji i bez rysowania grafu.
             To <b>nie</b> jest ten sam kod, który oglądasz w wizualizacji edukacyjnej. Źródło grafu: generator, edytor lub biblioteka.
             BFS/DFS, najkrótsze ścieżki i MST to osobne kategorie problemów.
           </p>
@@ -535,7 +535,7 @@ export default function Experiments() {
       {experimentsMode === 'research' ? (
         <Suspense
           fallback={(
-            <div className="panel" style={{ padding: 24, color: 'var(--muted, #aebbd0)' }}>
+            <div className="panel" style={{ padding: 24, color: 'var(--gl-text-muted)' }}>
               Ładowanie modułu badań porównawczych…
             </div>
           )}

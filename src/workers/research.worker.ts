@@ -147,7 +147,7 @@ self.onmessage = (event: MessageEvent<ResearchRequest>) => {
       if (eligible.length) {
         send({
           type: 'progress',
-          message: `Fair measurement (${eligible.map(id => algorithmLabels[id]).join(' · ')}) na „${item.label}” (${config.repetitions} powtórzeń)...`,
+          message: `Pomiar naprzemienny (${eligible.map(id => algorithmLabels[id]).join(' · ')}) na „${item.label}” (${config.repetitions} powtórzeń)...`,
           percent: percentBase + 40,
           caseIndex: index + 1,
           caseTotal: total,

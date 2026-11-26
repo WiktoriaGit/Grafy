@@ -294,7 +294,7 @@ export default function Comparison() {
     <div className="page-container cmp-page">
       <div className="page-heading">
         <div>
-          <div className="eyebrow"><GitCompare size={14} /> ALGORITHM COMPARISON</div>
+          <div className="eyebrow"><GitCompare size={14} /> PORÓWNANIE ALGORYTMÓW</div>
           <h1>Porównanie algorytmów</h1>
           <p>
             Uruchom dwa algorytmy na dokładnie tym samym grafie: te same wierzchołki, wagi i pozycje.

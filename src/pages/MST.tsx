@@ -139,7 +139,7 @@ export default function MST() {
     <div className="page-container algo-page">
       <div className="page-heading">
         <div>
-          <div className="eyebrow"><GitBranch size={14} /> GRAPH THEORY</div>
+          <div className="eyebrow"><GitBranch size={14} /> DRZEWA ROZPINAJĄCE</div>
           <h1>Minimalne drzewo rozpinające</h1>
           <p>
             Prim i Kruskal z pełną, krokową prezentacją: kandydaci, Union–Find, historia operacji i pseudokod.

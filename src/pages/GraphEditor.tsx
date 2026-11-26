@@ -501,7 +501,7 @@ export default function GraphEditor() {
     <div className="page-container">
       <div className="page-heading">
         <div>
-          <div className="eyebrow"><Network size={14} /> GRAPH WORKSPACE</div>
+          <div className="eyebrow"><Network size={14} /> EDYTOR GRAFÓW</div>
           <h1>Edytor grafów</h1>
           <p>Twórz i edytuj grafy, a następnie jednym kliknięciem przejdź do wizualizacji algorytmów.</p>
         </div>

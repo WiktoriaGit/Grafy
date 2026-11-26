@@ -62,7 +62,7 @@ const features = [
   },
   {
     title: 'Eksperymenty',
-    description: 'Duże grafy w Web Workerze — bez rysowania tysięcy wierzchołków w React Flow.',
+    description: 'Duże grafy w Web Workerze — bez rysowania tysięcy wierzchołków na płótnie.',
     icon: FlaskConical,
     to: '/experiments',
     color: 'blue',
@@ -108,7 +108,7 @@ export default function Dashboard() {
     <div className="page-container">
       <div className="page-heading">
         <div>
-          <div className="eyebrow">GRAPHLAB · RESEARCH WORKSPACE</div>
+          <div className="eyebrow">GRAPHLAB · PRZESTRZEŃ BADAWCZA</div>
           <h1>
             <span className="heading-accent">GraphLab</span> — laboratorium analizy
           </h1>
@@ -202,7 +202,7 @@ export default function Dashboard() {
         </div>
         <Suspense
           fallback={(
-            <div style={{ minHeight: 280, display: 'grid', placeItems: 'center', color: '#8b93a7' }}>
+            <div style={{ minHeight: 280, display: 'grid', placeItems: 'center', color: 'var(--gl-text-muted)' }}>
               Ładowanie podglądu grafu…
             </div>
           )}

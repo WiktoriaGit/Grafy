@@ -13,7 +13,7 @@ const Comparison = lazy(() => import('./pages/Comparison'))
 function RouteFallback() {
   return (
     <div className="page-container" style={{ paddingTop: 48 }}>
-      <div className="panel" style={{ padding: 28, color: '#aebbd0' }}>
+      <div className="panel" style={{ padding: 28, color: 'var(--gl-text-muted)' }}>
         Ładowanie modułu GraphLab…
       </div>
     </div>

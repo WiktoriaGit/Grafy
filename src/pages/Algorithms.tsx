@@ -414,7 +414,7 @@ export default function Algorithms() {
     <div className="page-container algo-page">
       <div className="page-heading">
         <div>
-          <div className="eyebrow"><GitBranch size={14} /> ALGORITHM EXPLORER</div>
+          <div className="eyebrow"><GitBranch size={14} /> EKSPLORATOR ALGORYTMÓW</div>
           <h1>Wizualizacja algorytmów</h1>
           <p>
             Krokowa prezentacja BFS, DFS, Dijkstry i Bellmana–Forda: opisy decyzji, pseudokod,

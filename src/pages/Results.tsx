@@ -218,10 +218,10 @@ export default function Results() {
     <div className="page-container">
       <div className="page-heading">
         <div>
-          <div className="eyebrow"><BarChart3 size={14} /> DATA ANALYTICS</div>
+          <div className="eyebrow"><BarChart3 size={14} /> ANALIZA WYNIKÓW</div>
           <h1>Wyniki i analiza</h1>
           <p>
-            Dane pochodzą z Eksperymentów (lean-implementacje w <code>benchmark.ts</code>, nie z wizualizacji krokowej).
+            Dane pochodzą z Eksperymentów (uproszczone implementacje pomiarowe w <code>benchmark.ts</code>, nie z wizualizacji krokowej).
             Magazyn lokalny: <code>localStorage / graphlab-benchmarks-v2</code>.
           </p>
         </div>
@@ -241,7 +241,7 @@ export default function Results() {
         <div className="panel-header"><h3>Jak czytać wyniki?</h3></div>
         <div className="results-edu-body">
           <p><b>Złożoność czasowa (Big O)</b> opisuje tempo wzrostu kosztu względem V i E — to model teoretyczny, nie dokładny czas w milisekundach.</p>
-          <p><b>Czas zmierzony</b> (`performance.now`) obejmuje lean-implementację z <code>src/utils/benchmark.ts</code> w Web Workerze (JIT, cache, CPU). Nie obejmuje animacji ani generowania grafu.</p>
+          <p><b>Czas zmierzony</b> (<code>performance.now</code>) obejmuje uproszczoną implementację pomiarową z <code>src/utils/benchmark.ts</code> w Web Workerze (wpływ JIT, pamięci podręcznej i CPU). Nie obejmuje animacji ani generowania grafu.</p>
           <p><b>Odchylenie standardowe σ</b> liczymy jako pierwiastek ze średniej kwadratów odchyleń od średniej (wariancja populacyjna: dzielnik = liczba powtórzeń w serii, nie n−1).</p>
           <p><b>Operacje benchmarku</b> to licznik w Workerze. <b>Kroki wizualizacji</b> pochodzą z instrumentowanych algorytmów edukacyjnych — innych plików i innego celu pomiaru.</p>
           <p>{COMPLEXITY_COMPARISON_NOTE}</p>

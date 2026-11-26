@@ -520,7 +520,7 @@ export const BENCHMARK_TASK_HINTS: Record<AlgorithmId, string> = {
   bfs: 'Pełne przeszukiwanie wszerz osiągalnej części grafu od źródła (bez wcześniejszego przerwania na celu). Nie jest algorytmem minimalnego kosztu wagowego.',
   dfs: 'Pełne przeszukiwanie w głąb osiągalnej części grafu od źródła. Nie wyznacza najkrótszej drogi ani MST.',
   dijkstra: 'Najkrótsze ścieżki od źródła (implementacja z kopcem binarnym) — wymaga wag nieujemnych.',
-  bellman: 'Najkrótsze ścieżki od źródła (Bellman–Ford); ujemne wagi OK, osiągalny ujemny cykl → wynik nieokreślony.',
+  bellman: 'Najkrótsze ścieżki od źródła (Bellman–Ford); ujemne wagi dozwolone, osiągalny ujemny cykl → wynik nieokreślony.',
   prim: 'Minimalne drzewo / las rozpinający (Prim z kopcem) — tylko graf nieskierowany; inny problem niż najkrótsza ścieżka.',
   kruskal: 'Minimalne drzewo / las rozpinający (Kruskal + Union–Find) — tylko graf nieskierowany.',
 }
